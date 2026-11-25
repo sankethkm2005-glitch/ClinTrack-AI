@@ -1,0 +1,8 @@
+"""Prompts exports."""
+
+from app.ai.prompts.extraction import (
+    CLINICAL_EXTRACTION_SYSTEM_PROMPT,
+    CLINICAL_EXTRACTION_USER_PROMPT,
+)
+
+__all__ = ["CLINICAL_EXTRACTION_SYSTEM_PROMPT", "CLINICAL_EXTRACTION_USER_PROMPT"]

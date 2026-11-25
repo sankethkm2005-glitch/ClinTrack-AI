@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>My Documents — ClinTrace AI</title>
+  <link rel="stylesheet" href="/css/styles.css">
+  <script src="https://unpkg.com/lucide@latest" defer></script>
+  <script src="/js/api.js" defer></script>
+</head>
+<body>
+  <header class="site-header">
+    <div class="container header-inner">
+      <a href="/" class="brand">
+        <i data-lucide="activity" aria-hidden="true"></i>
+        <span>ClinTrace AI</span>
+      </a>
+      <nav class="header-nav">
+        <a href="/patient/dashboard.html" class="nav-link">Dashboard</a>
+        <span class="user-pill" id="user-display">Loading...</span>
+        <button class="btn btn-outline btn-sm" onclick="handleLogout()">Sign Out</button>
+      </nav>
+    </div>
+  </header>
+
+  <main class="container main-content">
+    <div class="page-title-row">
+      <div>
+        <h1>My Medical Documents</h1>
+        <p class="lead">Upload and manage prescriptions, lab reports, and clinical records privately.</p>
+      </div>
+      <button class="btn btn-primary" onclick="toggleUploadCard()">
+        <i data-lucide="upload" aria-hidden="true"></i> Upload Documents
+      </button>
+    </div>
+
+    <!-- Upload Card -->
+    <div id="upload-card" class="card" style="display:none; margin-bottom: 1.5rem;">
+      <div class="card-header">
+        <h3>Upload Medical Documents</h3>
+        <p class="card-desc">Select one or more PDF or image files (PDF, PNG, JPG, JPEG up to 10MB each).</p>
+      </div>
+
+      <div id="upload-alert" class="alert" style="display:none;"></div>
+
+      <form id="upload-form" onsubmit="handleUpload(event)">
+        <div class="form-row">
+          <div class="form-group flex-1">
+            <label for="doc-category">Default Document Category</label>
+            <select id="doc-category" class="form-control">
+              <option value="prescription">Prescription</option>
+              <option value="lab_report">Laboratory Report</option>
+              <option value="discharge_summary">Discharge Summary</option>
+              <option value="medical_history">Medical History</option>
+              <option value="other" selected>Other Clinical Document</option>
+            </select>
+          </div>
+          <div class="form-group flex-2">
+            <label for="doc-files">Select Files *</label>
+            <input type="file" id="doc-files" class="form-control" multiple accept=".pdf,.png,.jpg,.jpeg" required>
+          </div>
+        </div>
+
+        <div style="display:flex; justify-content: flex-end; gap: 0.75rem; margin-top: 1rem;">
+          <button type="button" class="btn btn-outline" onclick="toggleUploadCard()">Cancel</button>
+          <button type="submit" id="upload-btn" class="btn btn-primary">Upload & Process</button>
+        </div>
+      </form>
+    </div>
+
+    <!-- Document Filters -->
+    <div class="filter-bar">
+      <div class="filter-group">
+        <label for="filter-category">Category:</label>
+        <select id="filter-category" class="form-control" onchange="loadDocuments()">
+          <option value="">All Categories</option>
+          <option value="prescription">Prescriptions</option>
+          <option value="lab_report">Lab Reports</option>
+          <option value="discharge_summary">Discharge Summaries</option>
+          <option value="medical_history">Medical Histories</option>
+          <option value="other">Other</option>
+        </select>
+      </div>
+      <div class="filter-group">
+        <label for="filter-status">Status:</label>
+        <select id="filter-status" class="form-control" onchange="loadDocuments()">
+          <option value="">All Statuses</option>
+          <option value="processed">Processed</option>
+          <option value="manual_review">Manual Review Required</option>
+          <option value="processing">Processing</option>
+          <option value="failed">Failed</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- Document List Table -->
+    <div class="card table-card">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Document Name</th>
+            <th>Category</th>
+            <th>Size</th>
+            <th>Uploaded</th>
+            <th>Status</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody id="documents-tbody">
+          <tr>
+            <td colspan="6" style="text-align:center; padding: 2rem;">Loading documents...</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Extraction Details Modal -->
+    <div id="extraction-modal" class="modal-overlay" style="display:none;">
+      <div class="modal-box">
+        <div class="modal-header">
+          <h3 id="modal-title">Clinical Extraction Details</h3>
+          <button class="close-btn" onclick="closeModal()">&times;</button>
+        </div>
+        <div class="modal-body" id="modal-content">
+          Loading extraction details...
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <script>
+    function toggleUploadCard() {
+      const card = document.getElementById('upload-card');
+      card.style.display = card.style.display === 'none' ? 'block' : 'none';
+    }
+
+    async function handleUpload(e) {
+      e.preventDefault();
+      const filesInput = document.getElementById('doc-files');
+      const category = document.getElementById('doc-category').value;
+      const alertBox = document.getElementById('upload-alert');
+      const btn = document.getElementById('upload-btn');
+
+      if (!filesInput.files.length) return;
+
+      btn.disabled = true;
+      btn.textContent = 'Uploading & analyzing...';
+      alertBox.style.display = 'none';
+
+      const formData = new FormData();
+      formData.append('document_type', category);
+      for (let i = 0; i < filesInput.files.length; i++) {
+        formData.append('files', filesInput.files[i]);
+      }
+
+      try {
+        const csrfToken = localStorage.getItem('clintrace_csrf');
+        const headers = {};
+        if (csrfToken) {
+          headers['X-CSRF-Token'] = csrfToken;
+        }
+
+        const response = await fetch('/api/documents/upload', {
+          method: 'POST',
+          headers: headers,
+          body: formData,
+          credentials: 'include'
+        });
+        const data = await response.json();
+        if (!response.ok) {
+          throw new Error(data.detail || 'Upload failed.');
+        }
+
+        alertBox.className = 'alert alert-success';
+        alertBox.textContent = `Successfully uploaded ${data.length} document(s). Text extracted and analyzed.`;
+        alertBox.style.display = 'block';
+        filesInput.value = '';
+        setTimeout(() => {
+          toggleUploadCard();
+          loadDocuments();
+        }, 1200);
+      } catch (err) {
+        alertBox.className = 'alert alert-error';
+        alertBox.textContent = err.message;
+        alertBox.style.display = 'block';
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Upload & Process';
+      }
+    }
+
+    async function loadDocuments() {
+      const tbody = document.getElementById('documents-tbody');
+      const cat = document.getElementById('filter-category').value;
+      const stat = document.getElementById('filter-status').value;
+
+      let query = '';
+      const params = new URLSearchParams();
+      if (cat) params.append('category', cat);
+      if (stat) params.append('status', stat);
+      if (params.toString()) query = `?${params.toString()}`;
+
+      try {
+        const docs = await apiRequest(`/documents${query}`);
+        if (!docs.length) {
+          tbody.innerHTML = `<tr><td colspan="6" style="text-align:center; padding: 2.5rem; color: var(--text-muted);">No documents found. Click 'Upload Documents' above to add your first record.</td></tr>`;
+          return;
+        }
+
+        tbody.innerHTML = docs.map(d => {
+          const sizeKb = Math.round(d.file_size_bytes / 1024);
+          const dateStr = new Date(d.uploaded_at).toLocaleDateString();
+          let statusBadge = `<span class="badge badge-success">Processed</span>`;
+          if (d.processing_status === 'manual_review') {
+            statusBadge = `<span class="badge badge-warning" title="Handwritten or low confidence">Manual Review</span>`;
+          } else if (d.processing_status === 'failed') {
+            statusBadge = `<span class="badge badge-error" title="${d.error_message || 'Processing error'}">Failed</span>`;
+          } else if (d.processing_status === 'processing') {
+            statusBadge = `<span class="badge badge-neutral">Processing...</span>`;
+          }
+
+          return `
+            <tr>
+              <td><strong>${escapeHtml(d.filename)}</strong></td>
+              <td>
+                <select class="form-control form-control-sm" onchange="changeCategory(${d.id}, this.value)">
+                  <option value="prescription" ${d.document_type === 'prescription' ? 'selected' : ''}>Prescription</option>
+                  <option value="lab_report" ${d.document_type === 'lab_report' ? 'selected' : ''}>Lab Report</option>
+                  <option value="discharge_summary" ${d.document_type === 'discharge_summary' ? 'selected' : ''}>Discharge Summary</option>
+                  <option value="medical_history" ${d.document_type === 'medical_history' ? 'selected' : ''}>Medical History</option>
+                  <option value="other" ${d.document_type === 'other' ? 'selected' : ''}>Other</option>
+                </select>
+              </td>
+              <td>${sizeKb} KB</td>
+              <td>${dateStr}</td>
+              <td>${statusBadge}</td>
+              <td class="action-cell">
+                <a href="/api/documents/${d.id}/view" target="_blank" class="btn btn-outline btn-sm" title="View Document">View</a>
+                <button onclick="viewExtraction(${d.id})" class="btn btn-outline btn-sm" title="View AI Extraction">AI Facts</button>
+                ${d.processing_status === 'failed' ? `<button onclick="retryDoc(${d.id})" class="btn btn-outline btn-sm" title="Retry Processing">Retry</button>` : ''}
+                <button onclick="deleteDoc(${d.id}, '${escapeHtml(d.filename)}')" class="btn btn-danger-outline btn-sm" title="Delete Document">Delete</button>
+              </td>
+            </tr>
+          `;
+        }).join('');
+      } catch (err) {
+        tbody.innerHTML = `<tr><td colspan="6" style="color:var(--danger-text); padding: 1.5rem;">Error loading documents: ${err.message}</td></tr>`;
+      }
+    }
+
+    async function changeCategory(id, newCat) {
+      try {
+        await apiRequest(`/documents/${id}`, {
+          method: 'PATCH',
+          body: JSON.stringify({ document_type: newCat })
+        });
+      } catch (err) {
+        alert('Failed to update category: ' + err.message);
+        loadDocuments();
+      }
+    }
+
+    async function retryDoc(id) {
+      try {
+        await apiRequest(`/documents/${id}/retry`, { method: 'POST' });
+        loadDocuments();
+      } catch (err) {
+        alert('Retry failed: ' + err.message);
+      }
+    }
+
+    async function deleteDoc(id, name) {
+      if (!confirm(`Are you sure you want to delete '${name}'? This will remove it from active records.`)) return;
+      try {
+        await apiRequest(`/documents/${id}`, { method: 'DELETE' });
+        loadDocuments();
+      } catch (err) {
+        alert('Delete failed: ' + err.message);
+      }
+    }
+
+    async function viewExtraction(id) {
+      const modal = document.getElementById('extraction-modal');
+      const body = document.getElementById('modal-content');
+      modal.style.display = 'flex';
+      body.innerHTML = 'Loading clinical facts...';
+
+      try {
+        const data = await apiRequest(`/documents/${id}/extracted`);
+        const struct = data.structured_data || {};
+        const conds = struct.conditions || [];
+        const meds = struct.medications || [];
+        const labs = struct.lab_results || [];
+
+        body.innerHTML = `
+          <div class="extraction-block">
+            <h4>Extraction Metadata</h4>
+            <p><strong>Method:</strong> ${data.extraction_method} | <strong>Pages:</strong> ${data.page_count} | <strong>AI Provider:</strong> ${struct.ai_provider || 'N/A'} (${struct.model || 'N/A'})</p>
+            ${struct.requires_manual_review ? `<div class="alert alert-error"><strong>Attention:</strong> ${struct.review_reason || 'Manual review required'}</div>` : ''}
+            
+            <h4>Identified Conditions / Diagnoses</h4>
+            ${conds.length ? `<ul>${conds.map(c => `<li><strong>${c.name}</strong> (${c.status || 'documented'}) - <em>"${c.evidence_text || ''}"</em> [P.${c.page_number}]</li>`).join('')}</ul>` : '<p class="text-muted">No explicit conditions recorded.</p>'}
+
+            <h4>Explicit Medications</h4>
+            ${meds.length ? `<ul>${meds.map(m => `<li><strong>${m.name}</strong> - ${m.dosage || ''} ${m.frequency || ''} (${m.route || ''}) - <em>"${m.evidence_text || ''}"</em> [P.${m.page_number}]</li>`).join('')}</ul>` : '<p class="text-muted">No medications stated.</p>'}
+
+            <h4>Laboratory Results</h4>
+            ${labs.length ? `<ul>${labs.map(l => `<li><strong>${l.test_name}:</strong> ${l.value} ${l.unit || ''} (Ref: ${l.reference_range || 'N/A'}) ${l.is_abnormal ? '<span class="badge badge-error">Abnormal</span>' : ''} [P.${l.page_number}]</li>`).join('')}</ul>` : '<p class="text-muted">No laboratory tests recorded.</p>'}
+
+            <h4>Raw Text Excerpt</h4>
+            <pre class="raw-text-box">${escapeHtml(data.raw_text.substring(0, 800))}${data.raw_text.length > 800 ? '...' : ''}</pre>
+          </div>
+        `;
+      } catch (err) {
+        body.innerHTML = `<div class="alert alert-error">Failed to load extraction: ${err.message}</div>`;
+      }
+    }
+
+    function closeModal() {
+      document.getElementById('extraction-modal').style.display = 'none';
+    }
+
+    function escapeHtml(str) {
+      if (!str) return '';
+      return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+
+    async function initPage() {
+      try {
+        const user = await apiRequest('/auth/me');
+        if (user.role !== 'patient') {
+          window.location.href = '/login.html';
+          return;
+        }
+        document.getElementById('user-display').textContent = `${user.email} (Patient)`;
+        loadDocuments();
+      } catch (err) {
+        window.location.href = '/login.html?role=patient';
+      }
+    }
+
+    async function handleLogout() {
+      try {
+        await apiRequest('/auth/logout', { method: 'POST' });
+      } finally {
+        window.location.href = '/login.html';
+      }
+    }
+
+    document.addEventListener('DOMContentLoaded', initPage);
+  </script>
+</body>
+</html>

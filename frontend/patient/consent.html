@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Doctor Access & Consent — ClinTrace AI</title>
+  <link rel="stylesheet" href="/css/styles.css">
+  <script src="https://unpkg.com/lucide@latest" defer></script>
+  <script src="/js/api.js" defer></script>
+</head>
+<body>
+  <header class="site-header">
+    <div class="container header-inner">
+      <a href="/" class="brand">
+        <i data-lucide="activity" aria-hidden="true"></i>
+        <span>ClinTrace AI</span>
+      </a>
+      <nav class="header-nav">
+        <a href="/patient/dashboard.html" class="nav-link">Dashboard</a>
+        <a href="/patient/documents.html" class="nav-link">My Documents</a>
+        <a href="/patient/timeline.html" class="nav-link">Timeline</a>
+        <span class="user-pill" id="user-display">Loading...</span>
+        <button class="btn btn-outline btn-sm" onclick="handleLogout()">Sign Out</button>
+      </nav>
+    </div>
+  </header>
+
+  <main class="container main-content">
+    <div class="page-title-row">
+      <div>
+        <h1>Doctor Access &amp; Consent Management</h1>
+        <p class="lead">You control who can view your medical records. No doctor can access your records without your permission.</p>
+      </div>
+    </div>
+
+    <!-- Pending Access Requests Section -->
+    <div class="card" style="margin-bottom: 1.5rem;">
+      <div class="card-header">
+        <h3>Pending Access Requests</h3>
+        <p class="card-desc">Review requests submitted by doctors searching with your unique Patient ID.</p>
+      </div>
+      <div id="pending-requests-list">
+        <p class="text-muted">Loading pending requests...</p>
+      </div>
+    </div>
+
+    <!-- Active Access Grants Section -->
+    <div class="card" style="margin-bottom: 1.5rem;">
+      <div class="card-header">
+        <h3>Active &amp; Historical Access Grants</h3>
+        <p class="card-desc">Time-limited access grants. You may revoke access immediately at any time.</p>
+      </div>
+      <div class="table-card">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Doctor</th>
+              <th>Type</th>
+              <th>Granted</th>
+              <th>Expires</th>
+              <th>Status</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody id="grants-tbody">
+            <tr><td colspan="6" style="text-align:center; padding:1.5rem;">Loading access grants...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- In-App Notifications & Audit Trail -->
+    <div class="card">
+      <div class="card-header">
+        <h3>Access Security &amp; Notifications</h3>
+        <p class="card-desc">Audit history of emergency events and consent requests.</p>
+      </div>
+      <div id="notifications-list" style="margin-top:0.75rem;">
+        <p class="text-muted">Loading notifications...</p>
+      </div>
+    </div>
+  </main>
+
+  <script>
+    async function initPage() {
+      try {
+        const user = await apiRequest('/auth/me');
+        if (user.role !== 'patient') {
+          window.location.href = '/login.html';
+          return;
+        }
+        document.getElementById('user-display').textContent = `${user.email} (Patient)`;
+        loadRequests();
+        loadGrants();
+        loadNotifications();
+      } catch (err) {
+        window.location.href = '/login.html?role=patient';
+      }
+    }
+
+    async function loadRequests() {
+      const container = document.getElementById('pending-requests-list');
+      try {
+        const requests = await apiRequest('/consent/requests');
+        const pending = requests.filter(r => r.status === 'pending');
+        if (!pending.length) {
+          container.innerHTML = '<p class="text-muted">No pending doctor access requests.</p>';
+          return;
+        }
+
+        container.innerHTML = pending.map(r => `
+          <div class="consent-request-item">
+            <div>
+              <strong>${r.doctor_name || 'Doctor'}</strong> (${r.doctor_specialization || 'General'})
+              <p class="reason-text">Reason: "${r.reason}"</p>
+              <small class="text-muted">Requested on ${new Date(r.created_at).toLocaleString()}</small>
+            </div>
+            <div style="display:flex; gap:0.5rem; align-items:center;">
+              <select id="dur-${r.id}" class="form-control form-control-sm">
+                <option value="24">24 Hours</option>
+                <option value="48">48 Hours</option>
+                <option value="168">7 Days</option>
+              </select>
+              <button class="btn btn-primary btn-sm" onclick="respondRequest(${r.id}, 'approve')">Approve</button>
+              <button class="btn btn-danger-outline btn-sm" onclick="respondRequest(${r.id}, 'reject')">Decline</button>
+            </div>
+          </div>
+        `).join('');
+      } catch (err) {
+        container.innerHTML = `<span style="color:var(--danger-text)">Failed to load requests: ${err.message}</span>`;
+      }
+    }
+
+    async function respondRequest(id, action) {
+      const durEl = document.getElementById(`dur-${id}`);
+      const duration_hours = durEl ? parseInt(durEl.value) : 24;
+      try {
+        await apiRequest(`/consent/requests/${id}`, {
+          method: 'PATCH',
+          body: JSON.stringify({ action, duration_hours })
+        });
+        loadRequests();
+        loadGrants();
+        loadNotifications();
+      } catch (err) {
+        alert('Action failed: ' + err.message);
+      }
+    }
+
+    async function loadGrants() {
+      const tbody = document.getElementById('grants-tbody');
+      try {
+        const grants = await apiRequest('/consent/grants');
+        if (!grants.length) {
+          tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; padding:1.5rem;" class="text-muted">No active or historical grants.</td></tr>';
+          return;
+        }
+
+        tbody.innerHTML = grants.map(g => {
+          let badge = g.is_active ? '<span class="badge badge-success">Active</span>' : '<span class="badge badge-neutral">Expired / Revoked</span>';
+          if (g.is_emergency) {
+            badge += ' <span class="badge badge-error">Emergency</span>';
+          }
+          return `
+            <tr>
+              <td><strong>${g.doctor_name}</strong></td>
+              <td>${g.is_emergency ? 'Emergency Override' : 'Consented Access'}</td>
+              <td>${new Date(g.created_at).toLocaleDateString()}</td>
+              <td>${new Date(g.expires_at).toLocaleString()}</td>
+              <td>${badge}</td>
+              <td>
+                ${g.is_active ? `<button class="btn btn-danger-outline btn-sm" onclick="revokeGrant(${g.id})">Revoke Access</button>` : '<span class="text-muted">—</span>'}
+              </td>
+            </tr>
+          `;
+        }).join('');
+      } catch (err) {
+        tbody.innerHTML = `<tr><td colspan="6" style="color:var(--danger-text)">Error: ${err.message}</td></tr>`;
+      }
+    }
+
+    async function revokeGrant(id) {
+      if (!confirm('Are you sure you want to revoke this doctor\'s access immediately?')) return;
+      try {
+        await apiRequest(`/consent/grants/${id}`, { method: 'DELETE' });
+        loadGrants();
+        loadNotifications();
+      } catch (err) {
+        alert('Revocation failed: ' + err.message);
+      }
+    }
+
+    async function loadNotifications() {
+      const container = document.getElementById('notifications-list');
+      try {
+        const list = await apiRequest('/notifications');
+        if (!list.length) {
+          container.innerHTML = '<p class="text-muted">No notifications recorded.</p>';
+          return;
+        }
+        container.innerHTML = list.map(n => `
+          <div class="notification-item ${n.is_read ? 'read' : 'unread'}">
+            <div>
+              <strong>${n.title}</strong>
+              <p style="margin:0.25rem 0 0; font-size:0.88rem;">${n.message}</p>
+              <small class="text-muted">${new Date(n.created_at).toLocaleString()}</small>
+            </div>
+            ${!n.is_read ? `<button class="btn btn-outline btn-sm" onclick="markRead(${n.id})">Mark Read</button>` : ''}
+          </div>
+        `).join('');
+      } catch (err) {
+        container.innerHTML = `<span style="color:var(--danger-text)">Error: ${err.message}</span>`;
+      }
+    }
+
+    async function markRead(id) {
+      await apiRequest(`/notifications/${id}/read`, { method: 'PATCH' });
+      loadNotifications();
+    }
+
+    async function handleLogout() {
+      try {
+        await apiRequest('/auth/logout', { method: 'POST' });
+      } finally {
+        window.location.href = '/login.html';
+      }
+    }
+
+    document.addEventListener('DOMContentLoaded', initPage);
+  </script>
+</body>
+</html>

@@ -14,7 +14,15 @@ API prefix:
 
 All protected endpoints require an authenticated user. The backend must enforce role-based authorization and patient-level access control.
 
+### GET `/api/health`
+
+Health-check endpoint verifying backend availability and SQLite database connectivity.
+
 ## 2. Authentication APIs
+
+### GET `/api/auth/me`
+
+Returns the currently authenticated user's session summary and role.
 
 ### POST `/api/auth/register`
 
@@ -60,6 +68,10 @@ Finding a patient does not automatically grant access to medical records.
 
 Returns the authenticated doctor's profile.
 
+### GET `/api/doctors/patients`
+
+Returns the list of patients for whom the authenticated doctor holds an active, non-expired consent grant.
+
 ### POST `/api/doctors/verification`
 
 Submits doctor verification information and supporting certificate.
@@ -88,6 +100,14 @@ Returns documents belonging to the authenticated patient or documents accessible
 
 Provides authorized access to a document.
 
+### PATCH `/api/documents/{document_id}`
+
+Allows manual category correction for an authorized patient document.
+
+### POST `/api/documents/{document_id}/retry`
+
+Retries text extraction/processing for a failed document.
+
 ### DELETE `/api/documents/{document_id}`
 
 Requests deletion of a patient's document.
@@ -112,6 +132,10 @@ Previous versions must remain available and must not be silently overwritten.
 
 ## 7. Consent APIs
 
+### GET `/api/consent/requests`
+
+Lists pending and historical access requests for the authenticated patient or doctor.
+
 ### POST `/api/consent/requests`
 
 Allows a doctor to request patient record access.
@@ -120,9 +144,17 @@ Allows a doctor to request patient record access.
 
 Allows the patient to approve or reject a request.
 
+### GET `/api/consent/grants`
+
+Lists active and historical access grants for the authenticated patient or doctor.
+
 ### DELETE `/api/consent/grants/{grant_id}`
 
 Allows the patient to revoke an access grant.
+
+### POST `/api/consent/emergency-access`
+
+Initiates a separate, restricted, reason-required, audited emergency access workflow and notifies the patient.
 
 Access grants must be scoped and time-limited.
 
@@ -142,11 +174,19 @@ Supported actions:
 
 Every review must record the doctor, timestamp, action, and explanation where applicable.
 
-## 9. Audit APIs
+## 9. Audit & Notification APIs
 
 ### GET `/api/audit/history`
 
 Returns access and security events available to the authenticated user according to authorization rules.
+
+### GET `/api/notifications`
+
+Returns notifications for the authenticated user.
+
+### PATCH `/api/notifications/{notification_id}/read`
+
+Marks a notification as read.
 
 ## 10. API Security Rules
 

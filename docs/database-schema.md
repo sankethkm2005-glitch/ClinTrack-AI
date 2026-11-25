@@ -48,7 +48,9 @@ Stores doctor information and verification status.
 | medical_council | String | Council information |
 | specialization | String | Medical specialization |
 | certificate_path | String | Private certificate storage path |
+| certificate_ocr_text | Text | Optional OCR-extracted text for provisional review (not proof of authenticity) |
 | verification_status | String | pending, provisional, verified, rejected |
+| created_at | DateTime | Profile creation time |
 
 Certificate OCR is not proof of genuine registration.
 
@@ -62,9 +64,11 @@ Stores uploaded medical document metadata.
 | patient_id | Integer | Patient profile foreign key |
 | filename | String | Original filename |
 | storage_path | String | Private storage path |
-| document_type | String | Prescription, lab report, discharge summary, other |
+| document_type | String | prescription, lab_report, discharge_summary, medical_history, other |
 | mime_type | String | File content type |
-| processing_status | String | uploaded, processing, processed, failed |
+| processing_status | String | uploaded, processing, processed, manual_review, failed |
+| requires_manual_review | Boolean | True when document requires manual doctor inspection (e.g. handwritten prescription) |
+| is_deleted | Boolean | Soft-deletion flag preserving audit history |
 | uploaded_at | DateTime | Upload time |
 
 ### 2.5 extracted_data
@@ -91,7 +95,9 @@ Stores individual AI analysis versions.
 | version_number | Integer | Analysis version |
 | status | String | current, outdated, failed |
 | summary | Text | Reconstructed medical summary |
+| completeness_score | Integer | Record completeness indicator (0-100; not medical accuracy or risk) |
 | ai_provider | String | Provider used |
+| ai_model | String | Model identifier used |
 | created_at | DateTime | Analysis time |
 
 ### 2.7 ai_findings
@@ -102,11 +108,11 @@ Stores AI-generated clinical findings.
 |---|---|---|
 | id | Integer | Primary key |
 | analysis_id | Integer | Analysis foreign key |
-| finding_type | String | medication, contradiction, lab, missing information |
+| finding_type | String | medication, contradiction, lab, missing_information |
 | priority | String | critical, needs_review, informational |
 | description | Text | Finding description |
 | evidence | JSON/Text | Source document and page references |
-| review_status | String | pending, reviewed |
+| review_status | String | pending, reviewed, clarification_requested, resolved |
 | created_at | DateTime | Creation time |
 
 Priority indicates review priority, not patient risk or diagnosis.
@@ -134,6 +140,7 @@ Stores requests made by doctors to access patient records.
 | doctor_id | Integer | Doctor user foreign key |
 | patient_id | Integer | Patient profile foreign key |
 | reason | Text | Access reason |
+| is_emergency | Boolean | True for restricted audited emergency access requests |
 | status | String | pending, approved, rejected |
 | created_at | DateTime | Request time |
 
@@ -148,6 +155,7 @@ Stores approved, scoped, time-limited access.
 | patient_id | Integer | Patient profile foreign key |
 | request_id | Integer | Related access request |
 | scope | JSON/Text | Authorized access scope |
+| is_emergency | Boolean | True for restricted audited emergency access grants |
 | expires_at | DateTime | Expiration time |
 | revoked_at | DateTime | Revocation time |
 | created_at | DateTime | Grant time |

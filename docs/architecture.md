@@ -1,4 +1,3 @@
-# ClinTrace AI Architecture
 # ClinTrace AI — System Architecture
 
 ## 1. Project Overview
@@ -148,4 +147,16 @@ The AI engine has four primary modules.
 ### C. Laboratory Analysis
 - Organizes laboratory test results.
 - Displays available values, units, dates, and reference ranges.
-- Highlights missing
+- Highlights missing reference details or incomplete test metadata.
+
+### D. Contradiction Detection
+- Identifies conflicting dates, diagnoses, medications, and missing clinical details across documents.
+- Presents both conflicting sides with supporting document and page references.
+- Never silently resolves contradictions; flags them for qualified doctor review.
+
+## 10. Clinical Safety & Analysis Versioning
+
+- The platform is a clinical decision-support prototype and must never independently diagnose, prescribe, or decide which conflicting clinical value is correct.
+- All AI findings are stored separately from doctor review decisions (`accept`, `reject`, `clarification`, `resolve`).
+- Analyses are versioned (`V1`, `V2`, ...). When new or deleted documents affect an analysis, a new version is generated and prior versions are marked `outdated` rather than overwritten.
+- A record completeness indicator summarizes documentation completeness and unresolved contradictions, without claiming medical accuracy or patient risk.

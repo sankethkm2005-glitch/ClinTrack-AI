@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Doctor Dashboard & Patients — ClinTrace AI</title>
+  <link rel="stylesheet" href="/css/styles.css">
+  <script src="https://unpkg.com/lucide@latest" defer></script>
+  <script src="/js/api.js" defer></script>
+</head>
+<body>
+  <header class="site-header">
+    <div class="container header-inner">
+      <a href="/" class="brand">
+        <i data-lucide="activity" aria-hidden="true"></i>
+        <span>ClinTrace AI — Clinical Workspace</span>
+      </a>
+      <nav class="header-nav">
+        <span class="user-pill" id="user-display">Loading...</span>
+        <button class="btn btn-outline btn-sm" onclick="handleLogout()">Sign Out</button>
+      </nav>
+    </div>
+  </header>
+
+  <main class="container main-content">
+    <section class="safety-banner" style="margin-bottom:1.5rem;">
+      <i data-lucide="shield-alert" aria-hidden="true"></i>
+      <div>
+        <strong>Doctor Verification Status: <span id="verification-status-pill" class="badge badge-neutral">Checking...</span></strong>
+        ClinTrace AI is a clinical decision-support tool. It never replaces your clinical examination or diagnostic judgment.
+        Medical certificate upload and OCR extraction do not constitute formal legal verification of medical credentials.
+      </div>
+    </section>
+
+    <!-- Top search & action row -->
+    <div class="doctor-hero" style="margin-bottom: 1.5rem;">
+      <div>
+        <h1 id="doctor-name">Clinical Workspace Portal</h1>
+        <p class="lead" id="doctor-meta">Specialization &amp; Council</p>
+      </div>
+
+      <!-- Patient ID Search & Access Request Card -->
+      <div class="search-box-card">
+        <h3><i data-lucide="search" aria-hidden="true"></i> Find Patient &amp; Request Consent</h3>
+        <p class="small-desc">Search patient ID to submit an access request or initiate audited emergency access.</p>
+        <div class="search-row">
+          <input type="text" id="search-patient-id" class="form-control" placeholder="e.g. CLN-DEMO-0001 or CLN-PAT-1001">
+          <button class="btn btn-primary btn-sm" onclick="searchPatient()">Find Patient</button>
+        </div>
+        <div id="search-result" style="margin-top:0.75rem;"></div>
+
+        <!-- Request Form Modal / Drawer -->
+        <div id="request-drawer" style="display:none; margin-top:1rem; border-top:1px solid var(--border); padding-top:0.75rem;">
+          <h4 style="margin:0 0 0.5rem; font-size:0.95rem;">Submit Record Access Request</h4>
+          <div class="form-group" style="margin-bottom:0.5rem;">
+            <label for="req-reason">Clinical Reason *</label>
+            <input type="text" id="req-reason" class="form-control" placeholder="e.g. Scheduled consultation, chronic disease follow-up">
+          </div>
+          <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
+            <button class="btn btn-primary btn-sm" onclick="submitConsentRequest()">
+              <i data-lucide="send" aria-hidden="true"></i> Request Patient Consent
+            </button>
+            <button class="btn btn-danger-outline btn-sm" onclick="promptEmergencyAccess()">
+              <i data-lucide="alert-circle" aria-hidden="true"></i> Emergency Access Override
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Quick Stats -->
+    <div class="stats-grid" style="margin-bottom: 1.5rem;">
+      <div class="stat-card">
+        <span class="stat-label">Authorized Patients</span>
+        <span class="stat-val" id="authorized-count-stat">0</span>
+        <span class="stat-sub">Active consent grants</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-label">Pending Requests</span>
+        <span class="stat-val" id="pending-count-stat">0</span>
+        <span class="stat-sub">Awaiting patient approval</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-label">Audited Access Logs</span>
+        <span class="stat-val">Active</span>
+        <span class="stat-sub">All views &amp; overrides recorded</span>
+      </div>
+    </div>
+
+    <!-- Authorized Patients List -->
+    <div class="card" style="margin-bottom: 1.5rem;">
+      <div class="card-header">
+        <h3><i data-lucide="users" aria-hidden="true"></i> My Consented Patients</h3>
+        <p class="card-desc">Patients who have granted you active, non-expired access to review their reconstructed health story.</p>
+      </div>
+      <div class="table-card">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Patient ID</th>
+              <th>Patient Name</th>
+              <th>Access Type</th>
+              <th>Access Expires</th>
+              <th>Workspace Actions</th>
+            </tr>
+          </thead>
+          <tbody id="patients-tbody">
+            <tr><td colspan="5" style="text-align:center; padding:1.5rem;">Loading authorized patients...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Outgoing Access Requests -->
+    <div class="card">
+      <div class="card-header">
+        <h3><i data-lucide="clock" aria-hidden="true"></i> Outgoing Access Requests</h3>
+        <p class="card-desc">Status of requests you have submitted to patients.</p>
+      </div>
+      <div id="outgoing-requests-list">
+        <p class="text-muted">Loading outgoing requests...</p>
+      </div>
+    </div>
+  </main>
+
+  <script>
+    let currentTargetPatientIdStr = null;
+
+    async function initDoctorDashboard() {
+      try {
+        const user = await apiRequest('/auth/me');
+        if (user.role !== 'doctor') {
+          window.location.href = '/login.html';
+          return;
+        }
+        document.getElementById('user-display').textContent = `${user.email} (Doctor)`;
+        if (user.doctor_profile) {
+          document.getElementById('doctor-name').textContent = `Welcome, ${user.doctor_profile.full_name}`;
+          document.getElementById('doctor-meta').textContent = `${user.doctor_profile.specialization} • Reg No: ${user.doctor_profile.registration_number} (${user.doctor_profile.medical_council})`;
+          const pill = document.getElementById('verification-status-pill');
+          pill.textContent = user.doctor_profile.verification_status.toUpperCase();
+          pill.className = `badge ${user.doctor_profile.verification_status === 'verified' ? 'badge-success' : 'badge-neutral'}`;
+        }
+        loadMyPatients();
+        loadOutgoingRequests();
+      } catch (err) {
+        window.location.href = '/login.html?role=doctor';
+      }
+    }
+
+    async function searchPatient() {
+      const id = document.getElementById('search-patient-id').value.trim();
+      const resDiv = document.getElementById('search-result');
+      const drawer = document.getElementById('request-drawer');
+      drawer.style.display = 'none';
+      if (!id) return;
+
+      resDiv.innerHTML = '<span class="text-muted">Searching...</span>';
+      try {
+        const data = await apiRequest(`/patients/search/${encodeURIComponent(id)}`);
+        currentTargetPatientIdStr = data.patient_id;
+        resDiv.innerHTML = `<span style="color:var(--success-text);">✔ Found: <strong>${data.full_name}</strong> (${data.patient_id})</span><br><small class="text-muted">${data.notice}</small>`;
+        drawer.style.display = 'block';
+      } catch (err) {
+        resDiv.innerHTML = `<span style="color:var(--danger-text);">✖ ${err.message}</span>`;
+      }
+    }
+
+    async function submitConsentRequest() {
+      const reason = document.getElementById('req-reason').value.trim();
+      if (!reason || reason.length < 5) {
+        alert('Please enter a valid clinical reason (minimum 5 characters).');
+        return;
+      }
+      try {
+        await apiRequest('/consent/requests', {
+          method: 'POST',
+          body: JSON.stringify({
+            patient_id_str: currentTargetPatientIdStr,
+            reason
+          })
+        });
+        alert('Access request submitted! The patient has been notified.');
+        document.getElementById('req-reason').value = '';
+        document.getElementById('request-drawer').style.display = 'none';
+        loadOutgoingRequests();
+      } catch (err) {
+        alert('Request failed: ' + err.message);
+      }
+    }
+
+    async function promptEmergencyAccess() {
+      const reason = prompt('EMERGENCY CLINICAL OVERRIDE\nEnter mandatory justification (minimum 10 characters). This will be recorded in the immutable audit log and notified to the patient:');
+      if (!reason || reason.trim().length < 10) {
+        alert('Emergency access canceled or reason too short.');
+        return;
+      }
+      try {
+        const grant = await apiRequest('/consent/emergency-access', {
+          method: 'POST',
+          body: JSON.stringify({
+            patient_id_str: currentTargetPatientIdStr,
+            reason: reason.trim()
+          })
+        });
+        alert('Emergency access granted for 4 hours. Event logged in audit log.');
+        loadMyPatients();
+        window.location.href = `/doctor/workspace.html?patient_id=${grant.patient_id}`;
+      } catch (err) {
+        alert('Emergency override failed: ' + err.message);
+      }
+    }
+
+    async function loadMyPatients() {
+      const tbody = document.getElementById('patients-tbody');
+      try {
+        const grants = await apiRequest('/doctors/patients');
+        document.getElementById('authorized-count-stat').textContent = grants.length;
+
+        if (!grants.length) {
+          tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; padding:1.5rem;" class="text-muted">No active patient consent grants. Search for a patient ID above to request access.</td></tr>';
+          return;
+        }
+
+        tbody.innerHTML = grants.map(g => `
+          <tr>
+            <td><strong>${g.patient_id_str || 'PAT-' + g.patient_id}</strong></td>
+            <td>${g.patient_name || 'Patient'}</td>
+            <td>${g.is_emergency ? '<span class="badge badge-error">Emergency Override</span>' : '<span class="badge badge-success">Consented</span>'}</td>
+            <td>${new Date(g.expires_at).toLocaleString()}</td>
+            <td>
+              <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
+                <a href="/doctor/workspace.html?patient_id=${g.patient_id}" class="btn btn-primary btn-sm">
+                  <i data-lucide="external-link" aria-hidden="true"></i> Open Workspace
+                </a>
+                <a href="/api/analysis/patients/${g.patient_id}/report.pdf" target="_blank" class="btn btn-outline btn-sm">
+                  <i data-lucide="file-down" aria-hidden="true"></i> PDF Report
+                </a>
+              </div>
+            </td>
+          </tr>
+        `).join('');
+      } catch (err) {
+        tbody.innerHTML = `<tr><td colspan="5" style="color:var(--danger-text)">Error loading patients: ${err.message}</td></tr>`;
+      }
+    }
+
+    async function loadOutgoingRequests() {
+      const container = document.getElementById('outgoing-requests-list');
+      try {
+        const requests = await apiRequest('/consent/requests');
+        const pending = requests.filter(r => r.status === 'pending');
+        document.getElementById('pending-count-stat').textContent = pending.length;
+
+        if (!requests.length) {
+          container.innerHTML = '<p class="text-muted">No submitted requests.</p>';
+          return;
+        }
+
+        container.innerHTML = requests.map(r => {
+          let badge = '<span class="badge badge-neutral">Pending</span>';
+          if (r.status === 'approved') badge = '<span class="badge badge-success">Approved</span>';
+          else if (r.status === 'rejected') badge = '<span class="badge badge-error">Rejected</span>';
+
+          return `
+            <div class="consent-request-item" style="border-bottom:1px solid var(--border); padding:0.6rem 0; display:flex; justify-content:space-between; align-items:center;">
+              <div>
+                <strong>${r.patient_name || r.patient_id_str}</strong> (${r.patient_id_str})
+                <p class="reason-text" style="margin:0.2rem 0; font-size:0.9rem;">Reason: "${r.reason}"</p>
+                <small class="text-muted">Requested on ${new Date(r.created_at).toLocaleString()}</small>
+              </div>
+              <div>${badge}</div>
+            </div>
+          `;
+        }).join('');
+      } catch (err) {
+        container.innerHTML = `<span style="color:var(--danger-text)">Error: ${err.message}</span>`;
+      }
+    }
+
+    async function handleLogout() {
+      try {
+        await apiRequest('/auth/logout', { method: 'POST' });
+      } finally {
+        window.location.href = '/login.html';
+      }
+    }
+
+    document.addEventListener('DOMContentLoaded', initDoctorDashboard);
+  </script>
+</body>
+</html>

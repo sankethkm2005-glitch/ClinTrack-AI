@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Login — ClinTrace AI</title>
+  <link rel="stylesheet" href="/css/styles.css">
+  <script src="https://unpkg.com/lucide@latest" defer></script>
+  <script src="/js/api.js" defer></script>
+</head>
+<body>
+  <header class="site-header">
+    <div class="container header-inner">
+      <a href="/" class="brand">
+        <i data-lucide="activity" aria-hidden="true"></i>
+        <span>ClinTrace AI</span>
+      </a>
+      <nav class="header-nav">
+        <a href="/" class="nav-link">Home</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="container main-content auth-container">
+    <div class="auth-card">
+      <div class="auth-header">
+        <h1>Account Sign In</h1>
+        <p class="lead">Select your account role and enter your credentials.</p>
+      </div>
+
+      <div class="role-selector" role="radiogroup" aria-label="Account Role">
+        <button type="button" class="role-tab active" id="tab-patient" onclick="setRole('patient')">
+          <i data-lucide="user" aria-hidden="true"></i> Patient
+        </button>
+        <button type="button" class="role-tab" id="tab-doctor" onclick="setRole('doctor')">
+          <i data-lucide="stethoscope" aria-hidden="true"></i> Doctor
+        </button>
+      </div>
+
+      <div id="error-alert" class="alert alert-error" style="display:none;" role="alert"></div>
+      <div id="success-alert" class="alert alert-success" style="display:none;" role="alert"></div>
+
+      <form id="login-form" class="auth-form" onsubmit="handleLogin(event)">
+        <input type="hidden" id="selected-role" value="patient">
+
+        <div class="form-group">
+          <label for="email">Email Address</label>
+          <input type="email" id="email" class="form-control" placeholder="name@example.com" required autocomplete="email">
+        </div>
+
+        <div class="form-group">
+          <label for="password">Password</label>
+          <input type="password" id="password" class="form-control" placeholder="••••••••" required autocomplete="current-password">
+        </div>
+
+        <button type="submit" id="submit-btn" class="btn btn-primary btn-block">Sign In</button>
+      </form>
+
+      <div class="auth-footer">
+        <p>Don't have an account? 
+          <a href="/signup.html" id="signup-link">Register here</a>
+        </p>
+      </div>
+    </div>
+  </main>
+
+  <footer class="site-footer">
+    <div class="container">
+      <p>ClinTrace AI &mdash; Decision-support prototype. Never bypasses clinical verification.</p>
+    </div>
+  </footer>
+
+  <script>
+    function setRole(role) {
+      document.getElementById('selected-role').value = role;
+      document.getElementById('tab-patient').classList.toggle('active', role === 'patient');
+      document.getElementById('tab-doctor').classList.toggle('active', role === 'doctor');
+      document.getElementById('signup-link').href = role === 'patient' ? '/signup.html?role=patient' : '/signup.html?role=doctor';
+    }
+
+    async function handleLogin(e) {
+      e.preventDefault();
+      const errBox = document.getElementById('error-alert');
+      const succBox = document.getElementById('success-alert');
+      const btn = document.getElementById('submit-btn');
+      errBox.style.display = 'none';
+      succBox.style.display = 'none';
+      btn.disabled = true;
+      btn.textContent = 'Signing in...';
+
+      const email = document.getElementById('email').value.trim();
+      const password = document.getElementById('password').value;
+      const role = document.getElementById('selected-role').value;
+
+      try {
+        const res = await apiRequest('/auth/login', {
+          method: 'POST',
+          body: JSON.stringify({ email, password, role })
+        });
+        if (res.csrf_token) {
+          localStorage.setItem('clintrace_csrf', res.csrf_token);
+        }
+        succBox.textContent = 'Login successful. Redirecting...';
+        succBox.style.display = 'block';
+        setTimeout(() => {
+          window.location.href = res.redirect_url;
+        }, 800);
+      } catch (err) {
+        errBox.textContent = err.message || 'Login failed. Please check your credentials.';
+        errBox.style.display = 'block';
+        btn.disabled = false;
+        btn.textContent = 'Sign In';
+      }
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+      const params = new URLSearchParams(window.location.search);
+      const roleParam = params.get('role');
+      if (roleParam === 'doctor') {
+        setRole('doctor');
+      }
+    });
+  </script>
+</body>
+</html>

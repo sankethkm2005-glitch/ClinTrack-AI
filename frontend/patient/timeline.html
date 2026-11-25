@@ -1,0 +1,383 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Health Timeline & AI Summary — ClinTrace AI</title>
+  <link rel="stylesheet" href="/css/styles.css">
+  <script src="https://unpkg.com/lucide@latest" defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="/js/api.js" defer></script>
+</head>
+<body>
+  <header class="site-header">
+    <div class="container header-inner">
+      <a href="/" class="brand">
+        <i data-lucide="activity" aria-hidden="true"></i>
+        <span>ClinTrace AI</span>
+      </a>
+      <nav class="header-nav">
+        <a href="/patient/dashboard.html" class="nav-link">Dashboard</a>
+        <a href="/patient/documents.html" class="nav-link">My Documents</a>
+        <a href="/patient/consent.html" class="nav-link">Doctor Access &amp; Consent</a>
+        <span class="user-pill" id="user-display">Loading...</span>
+        <button class="btn btn-outline btn-sm" onclick="handleLogout()">Sign Out</button>
+      </nav>
+    </div>
+  </header>
+
+  <main class="container main-content">
+    <section class="safety-banner" role="note">
+      <i data-lucide="shield-alert" aria-hidden="true"></i>
+      <div>
+        <strong>Clinical Decision-Support Prototype Notice:</strong>
+        This summary and timeline are reconstructed from your uploaded documents to assist clinical review.
+        The system does not diagnose or prescribe. All findings retain direct links to underlying source records.
+      </div>
+    </section>
+
+    <div class="page-title-row" style="margin-bottom:1.5rem;">
+      <div>
+        <h1>Reconstructed Health Story &amp; AI Intelligence</h1>
+        <p class="lead">Chronological medical timeline, medication checks, and cross-record findings.</p>
+      </div>
+      <div style="display:flex; gap:0.5rem; align-items:center; flex-wrap:wrap;">
+        <span id="version-badge" class="badge badge-neutral">Checking Version...</span>
+        <button class="btn btn-primary btn-sm" onclick="triggerAnalysisRun()">
+          <i data-lucide="sparkles" aria-hidden="true"></i> Run New Synthesis
+        </button>
+        <button class="btn btn-secondary btn-sm" onclick="downloadPdfReport()">
+          <i data-lucide="file-down" aria-hidden="true"></i> Download PDF Report
+        </button>
+      </div>
+    </div>
+
+    <!-- Completeness Indicator Card -->
+    <div class="card" style="margin-bottom: 1.5rem;">
+      <div class="completeness-container">
+        <div>
+          <h3>Record Completeness Indicator</h3>
+          <p class="card-desc" style="margin-bottom: 0.5rem;" id="completeness-desc">
+            Measures the breadth of uploaded clinical records, not patient health or clinical risk.
+          </p>
+          <ul id="completeness-penalties" class="penalties-list"></ul>
+        </div>
+        <div class="score-dial">
+          <span class="score-number" id="completeness-num">--%</span>
+          <span class="score-label">Documentation Score</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- AI Clinical Narrative Summary -->
+    <div class="card" style="margin-bottom: 1.5rem;">
+      <div class="card-header">
+        <h3>AI Health Summary</h3>
+        <span id="ai-model-tag" class="badge badge-neutral" style="font-size:0.75rem;">Model: Clinical Rule Engine (Fallback Safe)</span>
+      </div>
+      <p id="analysis-summary-text" style="font-size: 1rem; line-height: 1.6; color: var(--text);">
+        No analysis generated yet. Click 'Run New Synthesis' above or upload documents to analyze.
+      </p>
+    </div>
+
+    <!-- Lab Trend Analysis Card (Chart.js) -->
+    <div class="card" style="margin-bottom: 1.5rem;">
+      <div class="card-header" style="flex-wrap:wrap; gap:1rem;">
+        <div>
+          <h3><i data-lucide="trending-up" aria-hidden="true"></i> Laboratory Trends &amp; Biomarkers</h3>
+          <p class="card-desc">Chronological time-series plotting of compatible test units with reference boundaries.</p>
+        </div>
+        <div style="display:flex; align-items:center; gap:0.5rem;">
+          <label for="lab-test-selector" style="font-size:0.85rem; font-weight:600;">Select Biomarker:</label>
+          <select id="lab-test-selector" class="form-control" style="width:auto; min-width:200px;" onchange="renderSelectedLabTrend()">
+            <option value="">Loading laboratory tests...</option>
+          </select>
+        </div>
+      </div>
+      <div style="padding:1rem 0;">
+        <div id="chart-container" style="position:relative; width:100%; height:260px;">
+          <canvas id="labChart"></canvas>
+        </div>
+        <div id="lab-table-container" style="margin-top:1.25rem;">
+          <!-- Data points table -->
+        </div>
+      </div>
+    </div>
+
+    <!-- Clinical Intelligence Findings (Medications, Contradictions, Labs, Missing) -->
+    <div class="findings-section" style="margin-bottom: 2rem;">
+      <h2 style="font-size: 1.25rem; margin-bottom: 0.75rem;">AI Clinical Findings &amp; Reconciliations</h2>
+      <div id="findings-grid" class="findings-grid">
+        <p class="text-muted">No findings recorded.</p>
+      </div>
+    </div>
+
+    <!-- Chronological Health Timeline -->
+    <div class="card">
+      <div class="card-header">
+        <h3>Reconstructed Medical Timeline</h3>
+        <p class="card-desc">Chronological history linked to source records and page references.</p>
+      </div>
+      <div id="timeline-container" class="timeline">
+        <p class="text-muted" style="padding: 1rem;">No timeline events reconstructed.</p>
+      </div>
+    </div>
+  </main>
+
+  <script>
+    let currentPatientId = null;
+    let labTrendsData = [];
+    let currentChart = null;
+
+    async function initPage() {
+      try {
+        const user = await apiRequest('/auth/me');
+        if (user.role !== 'patient') {
+          window.location.href = '/login.html';
+          return;
+        }
+        document.getElementById('user-display').textContent = `${user.email} (Patient)`;
+        currentPatientId = user.patient_profile.id;
+        loadLatestAnalysis();
+        loadLabTrends();
+      } catch (err) {
+        window.location.href = '/login.html?role=patient';
+      }
+    }
+
+    async function loadLatestAnalysis() {
+      if (!currentPatientId) return;
+      try {
+        const a = await apiRequest(`/analysis/patients/${currentPatientId}/latest`);
+        renderAnalysis(a);
+      } catch (err) {
+        document.getElementById('analysis-summary-text').textContent = 'No previous analysis found. Click "Run New Synthesis" to analyze your uploaded documents.';
+        document.getElementById('version-badge').textContent = 'No Version';
+      }
+    }
+
+    async function triggerAnalysisRun() {
+      if (!currentPatientId) return;
+      const vBadge = document.getElementById('version-badge');
+      vBadge.textContent = 'Synthesizing...';
+      try {
+        const a = await apiRequest(`/analysis/patients/${currentPatientId}/run`, { method: 'POST' });
+        renderAnalysis(a);
+        loadLabTrends();
+      } catch (err) {
+        alert('Synthesis failed: ' + err.message);
+        loadLatestAnalysis();
+      }
+    }
+
+    function downloadPdfReport() {
+      if (!currentPatientId) return;
+      window.open(`/api/analysis/patients/${currentPatientId}/report.pdf`, '_blank');
+    }
+
+    function renderAnalysis(a) {
+      document.getElementById('version-badge').textContent = `Version V${a.version_number} (${a.status.toUpperCase()})`;
+      document.getElementById('version-badge').className = `badge ${a.status === 'current' ? 'badge-success' : 'badge-neutral'}`;
+      document.getElementById('completeness-num').textContent = `${a.completeness_score}%`;
+      document.getElementById('analysis-summary-text').textContent = a.summary;
+
+      if (a.ai_provider) {
+        document.getElementById('ai-model-tag').textContent = `Engine: ${a.ai_provider} (${a.ai_model || 'clinical-rule-engine'})`;
+      }
+
+      // Completeness breakdown
+      const bList = document.getElementById('completeness-penalties');
+      const gaps = a.completeness_breakdown?.penalties_or_gaps || [];
+      if (gaps.length) {
+        bList.innerHTML = gaps.map(g => `<li>${g}</li>`).join('');
+      } else {
+        bList.innerHTML = '<li style="color:var(--success-text);">Comprehensive coverage across clinical categories.</li>';
+      }
+
+      // Findings
+      const fGrid = document.getElementById('findings-grid');
+      const findings = a.findings || [];
+      if (!findings.length) {
+        fGrid.innerHTML = '<p class="text-muted">No clinical discrepancies or flagged findings identified.</p>';
+      } else {
+        fGrid.innerHTML = findings.map(f => {
+          let pBadge = 'badge-neutral';
+          if (f.priority === 'critical') pBadge = 'badge-error';
+          else if (f.priority === 'needs_review') pBadge = 'badge-warning';
+
+          const evHtml = Array.isArray(f.evidence) && f.evidence.length
+            ? `<div class="evidence-box"><strong>Evidence:</strong> ${f.evidence.map(e => `
+                <a href="${e.document_id ? `/api/documents/${e.document_id}/view` : '#'}" target="_blank" class="evidence-pill" style="display:inline-block; margin:2px; text-decoration:none;">
+                  📄 ${e.document_name} [Page ${e.page || 1}] ${e.quote ? `— "${e.quote}"` : ''}
+                </a>
+              `).join('')}</div>`
+            : '';
+
+          return `
+            <div class="finding-card ${f.priority}">
+              <div class="finding-header">
+                <strong>${f.title}</strong>
+                <span class="badge ${pBadge}">${f.priority.replace('_', ' ').toUpperCase()}</span>
+              </div>
+              <p class="finding-desc">${f.description}</p>
+              ${evHtml}
+            </div>
+          `;
+        }).join('');
+      }
+
+      // Timeline
+      const tContainer = document.getElementById('timeline-container');
+      const timeline = a.timeline || [];
+      if (!timeline.length) {
+        tContainer.innerHTML = '<p class="text-muted" style="padding:1rem;">No events in timeline.</p>';
+      } else {
+        tContainer.innerHTML = timeline.map(e => `
+          <div class="timeline-item">
+            <div class="timeline-date">${e.date || 'Undated'}</div>
+            <div class="timeline-content">
+              <strong>${e.title}</strong>
+              <p>${e.description || ''}</p>
+              <small class="text-muted">Source: <a href="${e.document_id ? `/api/documents/${e.document_id}/view` : '#'}" target="_blank" style="color:var(--primary); text-decoration:underline;">${e.document_name || 'Record'} (Page ${e.page_number || 1})</a> ${e.evidence_text ? `— <em>"${e.evidence_text}"</em>` : ''}</small>
+            </div>
+          </div>
+        `).join('');
+      }
+    }
+
+    async function loadLabTrends() {
+      if (!currentPatientId) return;
+      try {
+        const trends = await apiRequest(`/analysis/patients/${currentPatientId}/lab-trends`);
+        labTrendsData = trends || [];
+        const selector = document.getElementById('lab-test-selector');
+
+        if (!labTrendsData.length) {
+          selector.innerHTML = '<option value="">No lab trends detected in records</option>';
+          document.getElementById('chart-container').innerHTML = '<p class="text-muted" style="text-align:center; padding:2rem;">No numerical laboratory test results found in uploaded documents.</p>';
+          return;
+        }
+
+        selector.innerHTML = labTrendsData.map((t, i) => `
+          <option value="${i}">${t.test_name} (${t.unit}) — ${t.data_points.length} result(s)</option>
+        `).join('');
+
+        renderSelectedLabTrend();
+      } catch (err) {
+        console.error('Failed to load lab trends:', err);
+      }
+    }
+
+    function renderSelectedLabTrend() {
+      const selector = document.getElementById('lab-test-selector');
+      const idx = parseInt(selector.value);
+      if (isNaN(idx) || !labTrendsData[idx]) return;
+
+      const item = labTrendsData[idx];
+      const pts = item.data_points;
+
+      const labels = pts.map(p => p.date);
+      const values = pts.map(p => p.value);
+
+      // Render or Update Chart.js
+      const ctx = document.getElementById('labChart').getContext('2d');
+      if (currentChart) {
+        currentChart.destroy();
+      }
+
+      currentChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: labels,
+          datasets: [{
+            label: `${item.test_name} (${item.unit})`,
+            data: values,
+            borderColor: '#2563eb',
+            backgroundColor: 'rgba(37, 99, 235, 0.1)',
+            fill: true,
+            tension: 0.2,
+            pointBackgroundColor: pts.map(p => p.is_abnormal ? '#ef4444' : '#10b981'),
+            pointRadius: 6,
+            pointHoverRadius: 8
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          scales: {
+            y: {
+              beginAtZero: false,
+              title: {
+                display: true,
+                text: item.unit
+              }
+            },
+            x: {
+              title: {
+                display: true,
+                text: 'Encounter / Report Date'
+              }
+            }
+          },
+          plugins: {
+            legend: {
+              display: true
+            },
+            tooltip: {
+              callbacks: {
+                afterLabel: function(context) {
+                  const pt = pts[context.dataIndex];
+                  return [
+                    `Ref: ${pt.reference_range || 'N/A'}`,
+                    pt.is_abnormal ? 'Status: Abnormal / Elevated' : 'Status: Normal',
+                    `Source: ${pt.document_name}`
+                  ];
+                }
+              }
+            }
+          }
+        }
+      });
+
+      // Render data table
+      const tableContainer = document.getElementById('lab-table-container');
+      tableContainer.innerHTML = `
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Value</th>
+              <th>Unit</th>
+              <th>Documented Reference</th>
+              <th>Status</th>
+              <th>Source Record</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${pts.map(p => `
+              <tr>
+                <td>${p.date}</td>
+                <td><strong>${p.value}</strong></td>
+                <td>${item.unit}</td>
+                <td>${p.reference_range || 'Not specified'}</td>
+                <td><span class="badge ${p.is_abnormal ? 'badge-error' : 'badge-success'}">${p.is_abnormal ? 'Abnormal' : 'Within Normal Range'}</span></td>
+                <td><a href="/api/documents/${p.document_id}/view" target="_blank" class="btn btn-outline btn-sm">Inspect Record</a></td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      `;
+    }
+
+    async function handleLogout() {
+      try {
+        await apiRequest('/auth/logout', { method: 'POST' });
+      } finally {
+        window.location.href = '/login.html';
+      }
+    }
+
+    document.addEventListener('DOMContentLoaded', initPage);
+  </script>
+</body>
+</html>
