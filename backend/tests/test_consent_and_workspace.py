@@ -190,3 +190,97 @@ def test_doctor_finding_review_flow():
     assert len(hist) == 1
     assert hist[0]["action"] == "accept"
     assert "Clinically verified" in hist[0]["explanation"]
+
+
+def test_doctor_workspace_end_to_end_consent_and_v2_refresh():
+    """
+    Regression test verifying:
+    1. Doctor access before consent is strictly blocked (403) across workspace, documents, and analysis endpoints.
+    2. Doctor access after consent reveals V1 analysis, summary, findings, labs, and source documents.
+    3. When patient uploads a new document, V2 is generated and doctor sees V2 upon refreshing workspace.
+    4. After patient revokes consent, doctor is immediately blocked again (403).
+    """
+    p_client, p_profile = create_user("patient")
+    d_client, d_profile = create_user("doctor")
+    pat_str = p_profile["patient_profile"]["patient_id"]
+    pat_id = p_profile["patient_profile"]["id"]
+
+    # Patient uploads initial record (auto-synthesizes V1)
+    doc = fitz.open()
+    page = doc.new_page()
+    page.insert_text((50, 72), "PRESCRIPTION: Diagnosis: Type 2 Diabetes. Metformin 500mg BID oral.")
+    pdf1 = doc.tobytes()
+    doc.close()
+
+    up1 = p_client.post(
+        "/api/documents/upload",
+        files=[("files", ("initial_rx.pdf", io.BytesIO(pdf1), "application/pdf"))],
+        data={"document_type": "prescription"},
+    )
+    assert up1.status_code == 201
+    doc1_id = up1.json()[0]["id"]
+
+    # 1. Doctor access BEFORE consent -> ALL endpoints must return 403 Forbidden
+    assert d_client.get(f"/api/doctors/patients/{pat_id}/workspace").status_code == 403
+    assert d_client.get(f"/api/documents/{doc1_id}/view").status_code == 403
+    assert d_client.get(f"/api/documents/{doc1_id}/extracted").status_code == 403
+    assert d_client.get(f"/api/analysis/patients/{pat_id}/latest").status_code == 403
+    assert d_client.get(f"/api/analysis/patients/{pat_id}/lab-trends").status_code == 403
+    assert d_client.get(f"/api/analysis/patients/{pat_id}/report.pdf").status_code == 403
+
+    # 2. Request & Approve Consent
+    req_res = d_client.post("/api/consent/requests", json={"patient_id_str": pat_str, "reason": "Specialist consult"})
+    assert req_res.status_code == 201
+    app_res = p_client.patch(f"/api/consent/requests/{req_res.json()['id']}", json={"action": "approve", "duration_hours": 24})
+    assert app_res.status_code == 200
+    grants = p_client.get("/api/consent/grants").json()
+    grant_id = grants[0]["id"]
+
+    # Doctor access AFTER consent -> Sees V1 and source document
+    ws1 = d_client.get(f"/api/doctors/patients/{pat_id}/workspace")
+    assert ws1.status_code == 200
+    ws1_data = ws1.json()
+    assert ws1_data["analysis"]["version_number"] == 1
+    assert ws1_data["analysis"]["status"] == "current"
+    assert len(ws1_data["documents"]) == 1
+    assert d_client.get(f"/api/documents/{doc1_id}/view").status_code == 200
+    assert d_client.get(f"/api/analysis/patients/{pat_id}/report.pdf").status_code == 200
+
+    # 3. Patient uploads a second document (triggers automatic V2 synthesis)
+    doc2 = fitz.open()
+    page2 = doc2.new_page()
+    page2.insert_text((50, 72), "LAB REPORT: HbA1c: 8.4% (H) (Ref 4.0-5.6). Atorvastatin 20mg daily.")
+    pdf2 = doc2.tobytes()
+    doc2.close()
+
+    up2 = p_client.post(
+        "/api/documents/upload",
+        files=[("files", ("labs_and_statin.pdf", io.BytesIO(pdf2), "application/pdf"))],
+        data={"document_type": "lab_report"},
+    )
+    assert up2.status_code == 201
+    doc2_id = up2.json()[0]["id"]
+
+    # Doctor refreshes workspace -> MUST see V2, updated documents, and lab trends
+    ws2 = d_client.get(f"/api/doctors/patients/{pat_id}/workspace")
+    assert ws2.status_code == 200
+    ws2_data = ws2.json()
+    assert ws2_data["analysis"]["version_number"] == 2
+    assert ws2_data["analysis"]["status"] == "current"
+    assert len(ws2_data["documents"]) == 2
+    assert "Atorvastatin" in ws2_data["analysis"]["summary"]
+
+    lt_res = d_client.get(f"/api/analysis/patients/{pat_id}/lab-trends")
+    assert lt_res.status_code == 200
+    assert any(t["test_name"] == "HbA1c" for t in lt_res.json())
+
+    # 4. Patient revokes consent -> Doctor is immediately blocked (403)
+    rev_res = p_client.delete(f"/api/consent/grants/{grant_id}")
+    assert rev_res.status_code == 200
+
+    assert d_client.get(f"/api/doctors/patients/{pat_id}/workspace").status_code == 403
+    assert d_client.get(f"/api/documents/{doc2_id}/view").status_code == 403
+    assert d_client.get(f"/api/analysis/patients/{pat_id}/latest").status_code == 403
+    assert d_client.get(f"/api/analysis/patients/{pat_id}/lab-trends").status_code == 403
+    assert d_client.get(f"/api/analysis/patients/{pat_id}/report.pdf").status_code == 403
+

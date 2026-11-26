@@ -143,8 +143,8 @@ def seed_demo_data():
                 ],
                 "lab_results": [],
                 "requires_manual_review": False,
-                "ai_provider": "grok",
-                "model": "grok-3-mini",
+                "ai_provider": "offline",
+                "model": "clinical_regex_rule_engine",
             },
             extraction_method="pdf_text",
         )
@@ -180,8 +180,8 @@ def seed_demo_data():
                 ],
                 "lab_results": [],
                 "requires_manual_review": False,
-                "ai_provider": "grok",
-                "model": "grok-3-mini",
+                "ai_provider": "offline",
+                "model": "clinical_regex_rule_engine",
             },
             extraction_method="pdf_text",
         )
@@ -217,8 +217,8 @@ def seed_demo_data():
                     {"test_name": "Serum Creatinine", "value": "0.9", "unit": "mg/dL", "reference_range": "0.6 - 1.2", "is_abnormal": False, "page_number": 1, "evidence_text": "Serum Creatinine: 0.9 mg/dL"},
                 ],
                 "requires_manual_review": False,
-                "ai_provider": "grok",
-                "model": "grok-3-mini",
+                "ai_provider": "offline",
+                "model": "clinical_regex_rule_engine",
             },
             extraction_method="pdf_text",
         )
@@ -239,8 +239,8 @@ def seed_demo_data():
             completeness_score=analysis_res["completeness_score"],
             completeness_breakdown=analysis_res["completeness_breakdown"],
             timeline=analysis_res["timeline"],
-            ai_provider="grok",
-            ai_model="grok-3-mini",
+            ai_provider="offline",
+            ai_model="clinical_rule_engine",
             document_ids_snapshot=[doc1.id, doc2.id, doc3.id],
         )
         db.add(analysis)

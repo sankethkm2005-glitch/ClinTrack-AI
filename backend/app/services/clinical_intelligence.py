@@ -116,6 +116,8 @@ class ClinicalIntelligenceEngine:
             "completeness_breakdown": breakdown,
             "timeline": timeline,
             "findings": all_findings,
+            "ai_provider": "offline",
+            "ai_model": "clinical_rule_engine",
         }
 
     @classmethod

@@ -16,6 +16,9 @@ class DocumentOut(BaseModel):
     requires_manual_review: bool
     error_message: str | None = None
     uploaded_at: datetime
+    analysis_version: int | None = None
+    synthesis_status: str | None = None
+    synthesis_error: str | None = None
 
     model_config = {"from_attributes": True}
 

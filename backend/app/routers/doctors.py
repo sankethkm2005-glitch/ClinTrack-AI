@@ -121,6 +121,16 @@ def get_clinical_workspace(
         .first()
     )
 
+    from app.services.audit import log_audit_event
+    log_audit_event(
+        db=db,
+        action="workspace_viewed",
+        resource_type="patient_record",
+        resource_id=active_grant.patient.patient_id,
+        user_id=doctor.id,
+        details={"is_emergency": active_grant.is_emergency, "grant_id": active_grant.id},
+    )
+
     return {
         "grant": {
             "is_emergency": active_grant.is_emergency,

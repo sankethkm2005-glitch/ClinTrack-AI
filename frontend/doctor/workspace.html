@@ -18,6 +18,9 @@
       </a>
       <div style="display:flex; align-items:center; gap:0.75rem; flex-wrap:wrap;">
         <span id="patient-badge" class="patient-banner-pill">Loading Patient...</span>
+        <button class="btn btn-outline btn-sm" onclick="loadWorkspace()" title="Refresh Clinical Data">
+          <i data-lucide="refresh-cw" aria-hidden="true"></i> Refresh
+        </button>
         <button class="btn btn-secondary btn-sm" onclick="downloadOfficialReport()">
           <i data-lucide="file-down" aria-hidden="true"></i> Download PDF Report
         </button>
@@ -73,7 +76,10 @@
         </div>
 
         <div class="narrative-card" style="margin-bottom:1rem;">
-          <h4 style="margin:0 0 0.5rem;"><i data-lucide="sparkles" aria-hidden="true"></i> AI Clinical Summary (Objective Synthesis)</h4>
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.5rem; flex-wrap:wrap; gap:0.4rem;">
+            <h4 style="margin:0;"><i data-lucide="sparkles" aria-hidden="true"></i> Clinical Summary (Objective Synthesis)</h4>
+            <span id="centre-engine-badge" class="badge badge-neutral" style="font-size:0.75rem;">Offline Clinical Analysis</span>
+          </div>
           <p id="centre-summary-text" class="summary-p">Loading synthesized summary...</p>
         </div>
 
@@ -249,6 +255,10 @@
       }
 
       document.getElementById('analysis-version-badge').textContent = `Version V${a.version_number}`;
+      const isOffline = !a.ai_provider || ['offline', 'offline_heuristic', 'mock_heuristic'].includes(a.ai_provider);
+      document.getElementById('centre-engine-badge').textContent = isOffline
+        ? `Offline Clinical Analysis (${a.ai_provider || 'offline'} / ${a.ai_model || 'clinical_rule_engine'})`
+        : `Engine: ${a.ai_provider} (${a.ai_model})`;
       document.getElementById('centre-completeness-num').textContent = `${a.completeness_score}%`;
       document.getElementById('centre-summary-text').textContent = a.summary;
 

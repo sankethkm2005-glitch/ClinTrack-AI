@@ -28,6 +28,7 @@ from app.schemas.document import (
 from app.utils.dependencies import get_current_user, require_patient
 from app.document_processing.extractor import DocumentExtractor
 from app.ai.provider_factory import AIProviderFactory
+from app.routers.analysis import execute_patient_analysis
 
 router = APIRouter(prefix="/documents", tags=["Documents"])
 
@@ -168,7 +169,31 @@ async def upload_documents(
         await process_document_pipeline(doc, db)
         created_docs.append(doc)
 
-    return created_docs
+    # Automatically trigger patient-level clinical synthesis after extraction is committed
+    analysis_version = None
+    synthesis_status = "skipped"
+    synthesis_error = None
+
+    has_successful_doc = any(d.processing_status != "failed" for d in created_docs)
+    if created_docs and has_successful_doc:
+        try:
+            new_analysis = execute_patient_analysis(patient.id, db)
+            if new_analysis:
+                analysis_version = new_analysis.version_number
+                synthesis_status = "succeeded"
+        except Exception as e:
+            synthesis_status = "failed"
+            synthesis_error = str(e)
+
+    results = []
+    for d in created_docs:
+        out = DocumentOut.model_validate(d)
+        out.analysis_version = analysis_version
+        out.synthesis_status = synthesis_status
+        out.synthesis_error = synthesis_error
+        results.append(out)
+
+    return results
 
 
 @router.get("", response_model=list[DocumentOut])
@@ -192,6 +217,29 @@ def list_documents(
     return query.order_by(Document.uploaded_at.desc()).all()
 
 
+def _verify_document_access(doc: Document, user: User, db: Session) -> None:
+    """Enforce patient ownership or active doctor consent grant for accessing a document."""
+    if user.role == "patient":
+        if not user.patient_profile or doc.patient_id != user.patient_profile.id:
+            raise HTTPException(status_code=403, detail="Unauthorized access to this document.")
+    elif user.role == "doctor":
+        from app.models.consent import AccessGrant
+        from app.routers.consent import _is_grant_active
+        matching_grants = (
+            db.query(AccessGrant)
+            .filter(
+                AccessGrant.doctor_id == user.id,
+                AccessGrant.patient_id == doc.patient_id,
+                AccessGrant.revoked_at == None,
+            )
+            .all()
+        )
+        if not any(_is_grant_active(g) for g in matching_grants):
+            raise HTTPException(status_code=403, detail="No active consent grant for this patient's document.")
+    else:
+        raise HTTPException(status_code=403, detail="Unauthorized access.")
+
+
 @router.get("/{document_id}/view")
 def view_document(
     document_id: int,
@@ -203,12 +251,7 @@ def view_document(
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found.")
 
-    # Authorization guard: owner patient, or authorized doctor
-    if user.role == "patient":
-        if not user.patient_profile or doc.patient_id != user.patient_profile.id:
-            raise HTTPException(status_code=403, detail="Unauthorized access to this document.")
-    elif user.role != "doctor":
-        raise HTTPException(status_code=403, detail="Unauthorized access.")
+    _verify_document_access(doc, user, db)
 
     path = Path(doc.storage_path)
     if not path.exists():
@@ -232,9 +275,7 @@ def get_extracted_document_data(
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found.")
 
-    if user.role == "patient":
-        if not user.patient_profile or doc.patient_id != user.patient_profile.id:
-            raise HTTPException(status_code=403, detail="Unauthorized access.")
+    _verify_document_access(doc, user, db)
 
     extracted = db.query(ExtractedData).filter(ExtractedData.document_id == document_id).first()
     if not extracted:
@@ -263,6 +304,10 @@ def update_document_category(
     doc.document_type = payload.document_type
     db.commit()
     db.refresh(doc)
+    try:
+        execute_patient_analysis(patient.id, db)
+    except Exception:
+        pass
     return doc
 
 
@@ -284,6 +329,10 @@ async def retry_document_processing(
 
     await process_document_pipeline(doc, db)
     db.refresh(doc)
+    try:
+        execute_patient_analysis(patient.id, db)
+    except Exception:
+        pass
     return doc
 
 
@@ -305,4 +354,8 @@ def delete_document(
 
     doc.is_deleted = True
     db.commit()
+    try:
+        execute_patient_analysis(patient.id, db)
+    except Exception:
+        pass
     return {"status": "success", "message": f"Document '{doc.filename}' deleted successfully."}

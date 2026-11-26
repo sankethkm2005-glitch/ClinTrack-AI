@@ -40,39 +40,29 @@ def create_patient_with_records():
     c.headers["X-CSRF-Token"] = login_res.json()["csrf_token"]
     pat_id = c.get("/api/patients/me").json()["id"]
 
-    # Upload Doc 1: Prescription with Metformin 500mg and Diabetes
+    # Upload patient records in a batch (triggers automatic clinical synthesis V1)
     pdf1 = create_sample_pdf("PRESCRIPTION: Type 2 Diabetes. Metformin 500mg BID oral.")
-    c.post(
-        "/api/documents/upload",
-        files=[("files", ("rx1.pdf", io.BytesIO(pdf1), "application/pdf"))],
-        data={"document_type": "prescription"},
-    )
-
-    # Upload Doc 2: Prescription with conflicting Metformin 1000mg
     pdf2 = create_sample_pdf("PRESCRIPTION 2: Metformin 1000mg BID oral. Lisinopril 10mg daily.")
-    c.post(
-        "/api/documents/upload",
-        files=[("files", ("rx2.pdf", io.BytesIO(pdf2), "application/pdf"))],
-        data={"document_type": "prescription"},
-    )
-
-    # Upload Doc 3: Lab report with abnormal HbA1c
     pdf3 = create_sample_pdf("LAB REPORT: HbA1c: 7.8% (H) (Ref 4.0-5.6)")
     c.post(
         "/api/documents/upload",
-        files=[("files", ("labs.pdf", io.BytesIO(pdf3), "application/pdf"))],
-        data={"document_type": "lab_report"},
+        files=[
+            ("files", ("rx1.pdf", io.BytesIO(pdf1), "application/pdf")),
+            ("files", ("rx2.pdf", io.BytesIO(pdf2), "application/pdf")),
+            ("files", ("labs.pdf", io.BytesIO(pdf3), "application/pdf")),
+        ],
+        data={"document_type": "prescription"},
     )
 
     return c, pat_id
 
 
 def test_clinical_reconstruction_and_versioning():
-    """Verify run_patient_analysis produces V1, timeline, findings, and completeness score."""
+    """Verify upload produces V1 automatically, and manual run produces V2, preserving history."""
     c, pat_id = create_patient_with_records()
 
-    # Run Analysis V1
-    res = c.post(f"/api/analysis/patients/{pat_id}/run")
+    # Automatic Synthesis V1 generated upon upload
+    res = c.get(f"/api/analysis/patients/{pat_id}/latest")
     assert res.status_code == 200
     data = res.json()
     assert data["version_number"] == 1
@@ -83,7 +73,7 @@ def test_clinical_reconstruction_and_versioning():
     assert any(f["finding_type"] == "medication" for f in data["findings"])
     assert any(f["finding_type"] == "lab" for f in data["findings"])
 
-    # Run Analysis V2
+    # Re-run manual synthesis to produce V2
     res2 = c.post(f"/api/analysis/patients/{pat_id}/run")
     assert res2.status_code == 200
     data2 = res2.json()

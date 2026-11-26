@@ -81,6 +81,27 @@
       </div>
     </div>
 
+    <!-- Latest AI Clinical Summary & Extracted Findings -->
+    <div class="card" style="margin-bottom:1.5rem;" id="dashboard-summary-card">
+      <div class="card-header" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.5rem;">
+        <div>
+          <h3><i data-lucide="sparkles" aria-hidden="true"></i> Latest AI Clinical Summary</h3>
+          <p class="card-desc">Automatically synthesized across your processed medical documents.</p>
+        </div>
+        <div style="display:flex; gap:0.5rem; align-items:center; flex-wrap:wrap;">
+          <span id="dashboard-engine-badge" class="badge badge-neutral">Offline Clinical Analysis</span>
+          <span id="dashboard-version-badge" class="badge badge-neutral">No Analysis Yet</span>
+        </div>
+      </div>
+      <div style="padding-top:0.5rem;">
+        <p id="dashboard-summary-text" style="font-size:0.98rem; line-height:1.55; margin-bottom:0.85rem;">
+          Upload a medical document to generate your clinical summary and extracted health facts.
+        </p>
+        <div id="dashboard-findings-preview" style="display:flex; flex-wrap:wrap; gap:0.5rem; margin-bottom:0.75rem;"></div>
+        <a href="/patient/timeline.html" class="btn btn-outline btn-sm">View Full Timeline, Lab Trends &amp; Evidence &rarr;</a>
+      </div>
+    </div>
+
     <!-- Pending Access Requests Widget -->
     <div class="card" style="margin-bottom:1.5rem;">
       <div class="card-header">
@@ -189,7 +210,26 @@
           document.getElementById('grants-stat-val').textContent = `${active.length} Active`;
         }
         if (analysis.status === 'fulfilled') {
-          document.getElementById('analysis-stat-val').textContent = `V${analysis.value.version_number} (${analysis.value.completeness_score}%)`;
+          const a = analysis.value;
+          document.getElementById('analysis-stat-val').textContent = `V${a.version_number} (${a.completeness_score}%)`;
+          const isOffline = !a.ai_provider || ['offline', 'offline_heuristic', 'mock_heuristic'].includes(a.ai_provider);
+          document.getElementById('dashboard-engine-badge').textContent = isOffline
+            ? `Offline Clinical Analysis (${a.ai_provider || 'offline'} / ${a.ai_model || 'clinical_rule_engine'})`
+            : `${a.ai_provider} (${a.ai_model})`;
+          document.getElementById('dashboard-version-badge').textContent = `Version V${a.version_number} (${a.status.toUpperCase()})`;
+          document.getElementById('dashboard-version-badge').className = `badge ${a.status === 'current' ? 'badge-success' : 'badge-neutral'}`;
+          document.getElementById('dashboard-summary-text').textContent = a.summary;
+
+          const fPreview = document.getElementById('dashboard-findings-preview');
+          const findings = a.findings || [];
+          if (findings.length) {
+            fPreview.innerHTML = findings.slice(0, 6).map(f => {
+              const cls = f.priority === 'critical' ? 'badge-error' : (f.priority === 'needs_review' ? 'badge-warning' : 'badge-neutral');
+              return `<span class="badge ${cls}">${f.title}</span>`;
+            }).join('');
+          } else {
+            fPreview.innerHTML = '<span class="text-muted" style="font-size:0.85rem;">No discrepancies or abnormal findings detected.</span>';
+          }
         } else {
           document.getElementById('analysis-stat-val').textContent = 'Ready to Run';
         }
@@ -274,7 +314,7 @@
     async function revokeGrant(id) {
       if (!confirm('Are you sure you want to revoke this doctor\'s access immediately?')) return;
       try {
-        await apiRequest(`/consent/grants/${id}/revoke`, { method: 'POST' });
+        await apiRequest(`/consent/grants/${id}`, { method: 'DELETE' });
         loadActiveGrants();
         loadLiveMetrics();
       } catch (err) {

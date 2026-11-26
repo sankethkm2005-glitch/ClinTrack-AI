@@ -52,6 +52,8 @@ class AIAnalysisHistoryItem(BaseModel):
     status: str
     completeness_score: int
     summary: str
+    ai_provider: str
+    ai_model: str
     created_at: datetime
 
     model_config = {"from_attributes": True}

@@ -72,8 +72,8 @@ def test_full_clinical_workflow_end_to_end():
     assert up_res.status_code == 201
     assert len(up_res.json()) == 2
 
-    # 3. Clinical Intelligence Run (V1)
-    run_res = p_client.post(f"/api/analysis/patients/{pat_id}/run")
+    # 3. Clinical Intelligence Run (Automatically generated V1 upon upload)
+    run_res = p_client.get(f"/api/analysis/patients/{pat_id}/latest")
     assert run_res.status_code == 200
     analysis_data = run_res.json()
     assert analysis_data["version_number"] == 1

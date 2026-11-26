@@ -129,6 +129,8 @@
   </main>
 
   <script>
+    let currentPatient = null;
+
     function toggleUploadCard() {
       const card = document.getElementById('upload-card');
       card.style.display = card.style.display === 'none' ? 'block' : 'none';
@@ -144,8 +146,10 @@
       if (!filesInput.files.length) return;
 
       btn.disabled = true;
-      btn.textContent = 'Uploading & analyzing...';
-      alertBox.style.display = 'none';
+      btn.textContent = 'Uploading & Processing...';
+      alertBox.className = 'alert alert-neutral';
+      alertBox.textContent = 'Uploading document(s), extracting clinical text, and running AI synthesis...';
+      alertBox.style.display = 'block';
 
       const formData = new FormData();
       formData.append('document_type', category);
@@ -171,14 +175,36 @@
           throw new Error(data.detail || 'Upload failed.');
         }
 
-        alertBox.className = 'alert alert-success';
-        alertBox.textContent = `Successfully uploaded ${data.length} document(s). Text extracted and analyzed.`;
+        const failedDocs = data.filter(d => d.processing_status === 'failed');
+        const reviewDocs = data.filter(d => d.processing_status === 'manual_review');
+        const processedDocs = data.filter(d => d.processing_status === 'processed');
+        const firstDoc = data[0] || {};
+
+        let statusHtml = '';
+        if (failedDocs.length === data.length) {
+          alertBox.className = 'alert alert-error';
+          statusHtml = `<strong>✖ Extraction Failed:</strong> ${escapeHtml(failedDocs[0].error_message || 'Could not extract readable text from document.')}`;
+        } else {
+          alertBox.className = failedDocs.length > 0 || reviewDocs.length > 0 ? 'alert alert-warning' : 'alert alert-success';
+          const parts = [];
+          if (processedDocs.length) parts.push(`${processedDocs.length} Processed`);
+          if (reviewDocs.length) parts.push(`${reviewDocs.length} Flagged for Manual Review`);
+          if (failedDocs.length) parts.push(`${failedDocs.length} Failed (${escapeHtml(failedDocs[0].error_message || 'Error')})`);
+          statusHtml = `<div><strong>✔ Upload Complete:</strong> ${parts.join(', ')}.`;
+
+          if (firstDoc.synthesis_status === 'succeeded' && firstDoc.analysis_version) {
+            statusHtml += ` &bull; <strong>Clinical Synthesis updated to Version V${firstDoc.analysis_version}</strong>.`;
+          } else if (firstDoc.synthesis_status === 'failed') {
+            statusHtml += `<br><span style="color:var(--danger-text);">⚠ Clinical synthesis failed: ${escapeHtml(firstDoc.synthesis_error || 'Unknown synthesis error')}</span>`;
+          }
+
+          statusHtml += `<br><a href="/patient/timeline.html" style="color:inherit; text-decoration:underline; font-weight:600; margin-top:5px; display:inline-block;">View Updated Timeline &amp; Findings &rarr;</a> &nbsp;|&nbsp; <a href="/patient/dashboard.html" style="color:inherit; text-decoration:underline; font-weight:600;">Return to Health Hub</a></div>`;
+        }
+
+        alertBox.innerHTML = statusHtml;
         alertBox.style.display = 'block';
         filesInput.value = '';
-        setTimeout(() => {
-          toggleUploadCard();
-          loadDocuments();
-        }, 1200);
+        loadDocuments();
       } catch (err) {
         alertBox.className = 'alert alert-error';
         alertBox.textContent = err.message;
@@ -333,6 +359,7 @@
           return;
         }
         document.getElementById('user-display').textContent = `${user.email} (Patient)`;
+        currentPatient = user.patient_profile;
         loadDocuments();
       } catch (err) {
         window.location.href = '/login.html?role=patient';

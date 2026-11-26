@@ -180,31 +180,23 @@ def get_patient_lab_trends(
 
 
 
-@router.post("/patients/{patient_id}/run", response_model=AIAnalysisOut)
-def run_patient_analysis(
-    patient_id: int,
-    user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
+def execute_patient_analysis(patient_id: int, db: Session) -> AIAnalysis | None:
     """
-    Synthesizes multi-document clinical intelligence, marks prior version as outdated,
-    and increments analysis version (V1 -> V2 -> ...).
+    Executes cross-document clinical synthesis for a patient:
+    - Queries all active, non-deleted medical documents and their extracted data.
+    - Computes next incremental version number (V1 -> V2 -> ...).
+    - Preserves historical versions by marking existing active analysis as 'outdated'.
+    - Runs the ClinicalIntelligenceEngine to reconcile medications, detect contradictions, and analyze lab trends.
+    - Stores the synthesized AIAnalysis and associated AIFinding records.
+    - Returns the new AIAnalysis or None if no active documents exist.
     """
-    if not _verify_patient_access(patient_id, user):
-        raise HTTPException(status_code=403, detail="Unauthorized access to patient records.")
-
-    patient = db.query(PatientProfile).filter(PatientProfile.id == patient_id).first()
-    if not patient:
-        raise HTTPException(status_code=404, detail="Patient profile not found.")
-
-    # Fetch active documents and extracted data
     active_docs = (
         db.query(Document)
         .filter(Document.patient_id == patient_id, Document.is_deleted == False)
         .all()
     )
     if not active_docs:
-        raise HTTPException(status_code=400, detail="No active medical documents found for analysis.")
+        return None
 
     doc_ids = [d.id for d in active_docs]
     extracted_data_list = (
@@ -242,8 +234,8 @@ def run_patient_analysis(
         completeness_score=analysis_result["completeness_score"],
         completeness_breakdown=analysis_result["completeness_breakdown"],
         timeline=analysis_result["timeline"],
-        ai_provider=settings.AI_PROVIDER,
-        ai_model=settings.AI_MODEL,
+        ai_provider=analysis_result.get("ai_provider", "offline"),
+        ai_model=analysis_result.get("ai_model", "clinical_rule_engine"),
         document_ids_snapshot=doc_ids,
     )
     db.add(new_analysis)
@@ -267,6 +259,30 @@ def run_patient_analysis(
     return new_analysis
 
 
+@router.post("/patients/{patient_id}/run", response_model=AIAnalysisOut)
+def run_patient_analysis(
+    patient_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Synthesizes multi-document clinical intelligence, marks prior version as outdated,
+    and increments analysis version (V1 -> V2 -> ...).
+    """
+    if not _verify_patient_access(patient_id, user, db):
+        raise HTTPException(status_code=403, detail="Unauthorized access to patient records.")
+
+    patient = db.query(PatientProfile).filter(PatientProfile.id == patient_id).first()
+    if not patient:
+        raise HTTPException(status_code=404, detail="Patient profile not found.")
+
+    analysis = execute_patient_analysis(patient_id, db)
+    if not analysis:
+        raise HTTPException(status_code=400, detail="No active medical documents found for analysis.")
+
+    return analysis
+
+
 @router.get("/patients/{patient_id}/latest", response_model=AIAnalysisOut)
 def get_latest_patient_analysis(
     patient_id: int,
@@ -274,7 +290,7 @@ def get_latest_patient_analysis(
     db: Session = Depends(get_db),
 ):
     """Returns the latest current AI analysis for the patient."""
-    if not _verify_patient_access(patient_id, user):
+    if not _verify_patient_access(patient_id, user, db):
         raise HTTPException(status_code=403, detail="Unauthorized access to patient records.")
 
     analysis = (
@@ -296,7 +312,7 @@ def get_patient_analysis_history(
     db: Session = Depends(get_db),
 ):
     """Returns all preserved analysis versions for the patient."""
-    if not _verify_patient_access(patient_id, user):
+    if not _verify_patient_access(patient_id, user, db):
         raise HTTPException(status_code=403, detail="Unauthorized access to patient records.")
 
     return (

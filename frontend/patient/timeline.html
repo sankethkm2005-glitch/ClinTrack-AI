@@ -113,13 +113,24 @@
     </div>
 
     <!-- Chronological Health Timeline -->
-    <div class="card">
+    <div class="card" style="margin-bottom: 1.5rem;">
       <div class="card-header">
         <h3>Reconstructed Medical Timeline</h3>
         <p class="card-desc">Chronological history linked to source records and page references.</p>
       </div>
       <div id="timeline-container" class="timeline">
         <p class="text-muted" style="padding: 1rem;">No timeline events reconstructed.</p>
+      </div>
+    </div>
+
+    <!-- Analysis Version History -->
+    <div class="card">
+      <div class="card-header">
+        <h3>Analysis Version History</h3>
+        <p class="card-desc">Preserved synthesis versions with accurate provider &amp; model attribution.</p>
+      </div>
+      <div id="history-container" style="padding-top: 0.5rem;">
+        <p class="text-muted">Loading version history...</p>
       </div>
     </div>
   </main>
@@ -140,6 +151,7 @@
         currentPatientId = user.patient_profile.id;
         loadLatestAnalysis();
         loadLabTrends();
+        loadAnalysisHistory();
       } catch (err) {
         window.location.href = '/login.html?role=patient';
       }
@@ -164,6 +176,7 @@
         const a = await apiRequest(`/analysis/patients/${currentPatientId}/run`, { method: 'POST' });
         renderAnalysis(a);
         loadLabTrends();
+        loadAnalysisHistory();
       } catch (err) {
         alert('Synthesis failed: ' + err.message);
         loadLatestAnalysis();
@@ -181,9 +194,10 @@
       document.getElementById('completeness-num').textContent = `${a.completeness_score}%`;
       document.getElementById('analysis-summary-text').textContent = a.summary;
 
-      if (a.ai_provider) {
-        document.getElementById('ai-model-tag').textContent = `Engine: ${a.ai_provider} (${a.ai_model || 'clinical-rule-engine'})`;
-      }
+      const isOffline = !a.ai_provider || ['offline', 'offline_heuristic', 'mock_heuristic'].includes(a.ai_provider);
+      document.getElementById('ai-model-tag').textContent = isOffline
+        ? `Offline Clinical Analysis (${a.ai_provider || 'offline'} / ${a.ai_model || 'clinical_rule_engine'})`
+        : `Engine: ${a.ai_provider} (${a.ai_model})`;
 
       // Completeness breakdown
       const bList = document.getElementById('completeness-penalties');
@@ -367,6 +381,37 @@
           </tbody>
         </table>
       `;
+    }
+
+    async function loadAnalysisHistory() {
+      if (!currentPatientId) return;
+      const container = document.getElementById('history-container');
+      try {
+        const history = await apiRequest(`/analysis/patients/${currentPatientId}/history`);
+        if (!history || !history.length) {
+          container.innerHTML = '<p class="text-muted">No analysis versions recorded yet.</p>';
+          return;
+        }
+        container.innerHTML = history.map(h => {
+          const isOffline = !h.ai_provider || ['offline', 'offline_heuristic', 'mock_heuristic'].includes(h.ai_provider);
+          const engineLabel = isOffline
+            ? `Offline Clinical Analysis (${h.ai_provider || 'offline'} / ${h.ai_model || 'clinical_rule_engine'})`
+            : `${h.ai_provider} (${h.ai_model})`;
+          return `
+            <div style="border-bottom:1px solid var(--border); padding:0.6rem 0; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.5rem;">
+              <div>
+                <strong>Version V${h.version_number}</strong>
+                <span class="badge ${h.status === 'current' ? 'badge-success' : 'badge-neutral'}">${h.status.toUpperCase()}</span>
+                <span class="badge badge-neutral" style="font-size:0.75rem;">${engineLabel}</span>
+                <p style="margin:0.25rem 0 0; font-size:0.85rem; color:var(--text-muted);">${h.summary}</p>
+              </div>
+              <small class="text-muted">${new Date(h.created_at).toLocaleString()} &bull; ${h.completeness_score}%</small>
+            </div>
+          `;
+        }).join('');
+      } catch (err) {
+        container.innerHTML = '<p class="text-muted">Failed to load analysis history.</p>';
+      }
     }
 
     async function handleLogout() {
