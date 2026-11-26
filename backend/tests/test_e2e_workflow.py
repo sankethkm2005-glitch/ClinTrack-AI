@@ -97,6 +97,16 @@ def test_full_clinical_workflow_end_to_end():
     )
     assert d_reg.status_code == 201
 
+    # Verify doctor profile for authorized search and access request
+    from app.database import SessionLocal
+    from app.models.user import DoctorProfile
+    db = SessionLocal()
+    doc_prof = db.query(DoctorProfile).filter(DoctorProfile.user_id == d_reg.json()["id"]).first()
+    assert doc_prof is not None
+    doc_prof.verification_status = "verified"
+    db.commit()
+    db.close()
+
     d_log = d_client.post("/api/auth/login", json={"email": d_email, "password": "DoctorPassword123!", "role": "doctor"})
     assert d_log.status_code == 200
     d_client.headers["X-CSRF-Token"] = d_log.json()["csrf_token"]

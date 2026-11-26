@@ -17,6 +17,8 @@
       </a>
       <nav class="header-nav">
         <a href="/patient/dashboard.html" class="nav-link">Dashboard</a>
+        <a href="/patient/timeline.html" class="nav-link">Timeline &amp; Labs</a>
+        <a href="/patient/consent.html" class="nav-link">Doctor Access &amp; Consent</a>
         <span class="user-pill" id="user-display">Loading...</span>
         <button class="btn btn-outline btn-sm" onclick="handleLogout()">Sign Out</button>
       </nav>
@@ -240,7 +242,7 @@
           if (d.processing_status === 'manual_review') {
             statusBadge = `<span class="badge badge-warning" title="Handwritten or low confidence">Manual Review</span>`;
           } else if (d.processing_status === 'failed') {
-            statusBadge = `<span class="badge badge-error" title="${d.error_message || 'Processing error'}">Failed</span>`;
+            statusBadge = `<span class="badge badge-error" title="${escapeHtml(d.error_message || 'Processing error')}">Failed</span>`;
           } else if (d.processing_status === 'processing') {
             statusBadge = `<span class="badge badge-neutral">Processing...</span>`;
           }
@@ -264,13 +266,13 @@
                 <a href="/api/documents/${d.id}/view" target="_blank" class="btn btn-outline btn-sm" title="View Document">View</a>
                 <button onclick="viewExtraction(${d.id})" class="btn btn-outline btn-sm" title="View AI Extraction">AI Facts</button>
                 ${d.processing_status === 'failed' ? `<button onclick="retryDoc(${d.id})" class="btn btn-outline btn-sm" title="Retry Processing">Retry</button>` : ''}
-                <button onclick="deleteDoc(${d.id}, '${escapeHtml(d.filename)}')" class="btn btn-danger-outline btn-sm" title="Delete Document">Delete</button>
+                <button data-filename="${escapeHtml(d.filename)}" onclick="deleteDoc(${d.id}, this.dataset.filename)" class="btn btn-danger-outline btn-sm" title="Delete Document">Delete</button>
               </td>
             </tr>
           `;
         }).join('');
       } catch (err) {
-        tbody.innerHTML = `<tr><td colspan="6" style="color:var(--danger-text); padding: 1.5rem;">Error loading documents: ${err.message}</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="6" style="color:var(--danger-text); padding: 1.5rem;">Error loading documents: ${escapeHtml(err.message)}</td></tr>`;
       }
     }
 
@@ -321,34 +323,29 @@
         body.innerHTML = `
           <div class="extraction-block">
             <h4>Extraction Metadata</h4>
-            <p><strong>Method:</strong> ${data.extraction_method} | <strong>Pages:</strong> ${data.page_count} | <strong>AI Provider:</strong> ${struct.ai_provider || 'N/A'} (${struct.model || 'N/A'})</p>
-            ${struct.requires_manual_review ? `<div class="alert alert-error"><strong>Attention:</strong> ${struct.review_reason || 'Manual review required'}</div>` : ''}
+            <p><strong>Method:</strong> ${escapeHtml(data.extraction_method)} | <strong>Pages:</strong> ${data.page_count} | <strong>AI Provider:</strong> ${escapeHtml(struct.ai_provider || 'N/A')} (${escapeHtml(struct.model || 'N/A')})</p>
+            ${struct.requires_manual_review ? `<div class="alert alert-error"><strong>Attention:</strong> ${escapeHtml(struct.review_reason || 'Manual review required')}</div>` : ''}
             
             <h4>Identified Conditions / Diagnoses</h4>
-            ${conds.length ? `<ul>${conds.map(c => `<li><strong>${c.name}</strong> (${c.status || 'documented'}) - <em>"${c.evidence_text || ''}"</em> [P.${c.page_number}]</li>`).join('')}</ul>` : '<p class="text-muted">No explicit conditions recorded.</p>'}
+            ${conds.length ? `<ul>${conds.map(c => `<li><strong>${escapeHtml(c.name)}</strong> (${escapeHtml(c.status || 'documented')}) - <em>"${escapeHtml(c.evidence_text || '')}"</em> [P.${c.page_number}]</li>`).join('')}</ul>` : '<p class="text-muted">No explicit conditions recorded.</p>'}
 
             <h4>Explicit Medications</h4>
-            ${meds.length ? `<ul>${meds.map(m => `<li><strong>${m.name}</strong> - ${m.dosage || ''} ${m.frequency || ''} (${m.route || ''}) - <em>"${m.evidence_text || ''}"</em> [P.${m.page_number}]</li>`).join('')}</ul>` : '<p class="text-muted">No medications stated.</p>'}
+            ${meds.length ? `<ul>${meds.map(m => `<li><strong>${escapeHtml(m.name)}</strong> - ${escapeHtml(m.dosage || '')} ${escapeHtml(m.frequency || '')} (${escapeHtml(m.route || '')}) - <em>"${escapeHtml(m.evidence_text || '')}"</em> [P.${m.page_number}]</li>`).join('')}</ul>` : '<p class="text-muted">No medications stated.</p>'}
 
             <h4>Laboratory Results</h4>
-            ${labs.length ? `<ul>${labs.map(l => `<li><strong>${l.test_name}:</strong> ${l.value} ${l.unit || ''} (Ref: ${l.reference_range || 'N/A'}) ${l.is_abnormal ? '<span class="badge badge-error">Abnormal</span>' : ''} [P.${l.page_number}]</li>`).join('')}</ul>` : '<p class="text-muted">No laboratory tests recorded.</p>'}
+            ${labs.length ? `<ul>${labs.map(l => `<li><strong>${escapeHtml(l.test_name)}:</strong> ${escapeHtml(l.value)} ${escapeHtml(l.unit || '')} (Ref: ${escapeHtml(l.reference_range || 'N/A')}) ${l.is_abnormal ? '<span class="badge badge-error">Abnormal</span>' : ''} [P.${l.page_number}]</li>`).join('')}</ul>` : '<p class="text-muted">No laboratory tests recorded.</p>'}
 
             <h4>Raw Text Excerpt</h4>
             <pre class="raw-text-box">${escapeHtml(data.raw_text.substring(0, 800))}${data.raw_text.length > 800 ? '...' : ''}</pre>
           </div>
         `;
       } catch (err) {
-        body.innerHTML = `<div class="alert alert-error">Failed to load extraction: ${err.message}</div>`;
+        body.innerHTML = `<div class="alert alert-error">Failed to load extraction: ${escapeHtml(err.message)}</div>`;
       }
     }
 
     function closeModal() {
       document.getElementById('extraction-modal').style.display = 'none';
-    }
-
-    function escapeHtml(str) {
-      if (!str) return '';
-      return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
     }
 
     async function initPage() {

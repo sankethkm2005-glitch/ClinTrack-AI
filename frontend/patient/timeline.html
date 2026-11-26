@@ -203,7 +203,7 @@
       const bList = document.getElementById('completeness-penalties');
       const gaps = a.completeness_breakdown?.penalties_or_gaps || [];
       if (gaps.length) {
-        bList.innerHTML = gaps.map(g => `<li>${g}</li>`).join('');
+        bList.innerHTML = gaps.map(g => `<li>${escapeHtml(g)}</li>`).join('');
       } else {
         bList.innerHTML = '<li style="color:var(--success-text);">Comprehensive coverage across clinical categories.</li>';
       }
@@ -222,7 +222,7 @@
           const evHtml = Array.isArray(f.evidence) && f.evidence.length
             ? `<div class="evidence-box"><strong>Evidence:</strong> ${f.evidence.map(e => `
                 <a href="${e.document_id ? `/api/documents/${e.document_id}/view` : '#'}" target="_blank" class="evidence-pill" style="display:inline-block; margin:2px; text-decoration:none;">
-                  📄 ${e.document_name} [Page ${e.page || 1}] ${e.quote ? `— "${e.quote}"` : ''}
+                  📄 ${escapeHtml(e.document_name)} [Page ${e.page || 1}] ${e.quote ? `— "${escapeHtml(e.quote)}"` : ''}
                 </a>
               `).join('')}</div>`
             : '';
@@ -230,10 +230,10 @@
           return `
             <div class="finding-card ${f.priority}">
               <div class="finding-header">
-                <strong>${f.title}</strong>
-                <span class="badge ${pBadge}">${f.priority.replace('_', ' ').toUpperCase()}</span>
+                <strong>${escapeHtml(f.title)}</strong>
+                <span class="badge ${pBadge}">${escapeHtml(f.priority.replace('_', ' ').toUpperCase())}</span>
               </div>
-              <p class="finding-desc">${f.description}</p>
+              <p class="finding-desc">${escapeHtml(f.description)}</p>
               ${evHtml}
             </div>
           `;
@@ -248,11 +248,11 @@
       } else {
         tContainer.innerHTML = timeline.map(e => `
           <div class="timeline-item">
-            <div class="timeline-date">${e.date || 'Undated'}</div>
+            <div class="timeline-date">${escapeHtml(e.date || 'Undated')}</div>
             <div class="timeline-content">
-              <strong>${e.title}</strong>
-              <p>${e.description || ''}</p>
-              <small class="text-muted">Source: <a href="${e.document_id ? `/api/documents/${e.document_id}/view` : '#'}" target="_blank" style="color:var(--primary); text-decoration:underline;">${e.document_name || 'Record'} (Page ${e.page_number || 1})</a> ${e.evidence_text ? `— <em>"${e.evidence_text}"</em>` : ''}</small>
+              <strong>${escapeHtml(e.title)}</strong>
+              <p>${escapeHtml(e.description || '')}</p>
+              <small class="text-muted">Source: <a href="${e.document_id ? `/api/documents/${e.document_id}/view` : '#'}" target="_blank" style="color:var(--primary); text-decoration:underline;">${escapeHtml(e.document_name || 'Record')} (Page ${e.page_number || 1})</a> ${e.evidence_text ? `— <em>"${escapeHtml(e.evidence_text)}"</em>` : ''}</small>
             </div>
           </div>
         `).join('');
@@ -273,7 +273,7 @@
         }
 
         selector.innerHTML = labTrendsData.map((t, i) => `
-          <option value="${i}">${t.test_name} (${t.unit}) — ${t.data_points.length} result(s)</option>
+          <option value="${i}">${escapeHtml(t.test_name)} (${escapeHtml(t.unit)}) — ${t.data_points.length} result(s)</option>
         `).join('');
 
         renderSelectedLabTrend();
@@ -370,10 +370,10 @@
           <tbody>
             ${pts.map(p => `
               <tr>
-                <td>${p.date}</td>
-                <td><strong>${p.value}</strong></td>
-                <td>${item.unit}</td>
-                <td>${p.reference_range || 'Not specified'}</td>
+                <td>${escapeHtml(p.date)}</td>
+                <td><strong>${escapeHtml(p.value)}</strong></td>
+                <td>${escapeHtml(item.unit)}</td>
+                <td>${escapeHtml(p.reference_range || 'Not specified')}</td>
                 <td><span class="badge ${p.is_abnormal ? 'badge-error' : 'badge-success'}">${p.is_abnormal ? 'Abnormal' : 'Within Normal Range'}</span></td>
                 <td><a href="/api/documents/${p.document_id}/view" target="_blank" class="btn btn-outline btn-sm">Inspect Record</a></td>
               </tr>
@@ -402,8 +402,8 @@
               <div>
                 <strong>Version V${h.version_number}</strong>
                 <span class="badge ${h.status === 'current' ? 'badge-success' : 'badge-neutral'}">${h.status.toUpperCase()}</span>
-                <span class="badge badge-neutral" style="font-size:0.75rem;">${engineLabel}</span>
-                <p style="margin:0.25rem 0 0; font-size:0.85rem; color:var(--text-muted);">${h.summary}</p>
+                <span class="badge badge-neutral" style="font-size:0.75rem;">${escapeHtml(engineLabel)}</span>
+                <p style="margin:0.25rem 0 0; font-size:0.85rem; color:var(--text-muted);">${escapeHtml(h.summary)}</p>
               </div>
               <small class="text-muted">${new Date(h.created_at).toLocaleString()} &bull; ${h.completeness_score}%</small>
             </div>

@@ -26,6 +26,7 @@ from app.schemas.document import (
     ExtractedDataOut,
 )
 from app.utils.dependencies import get_current_user, require_patient
+from app.utils.security import validate_file_magic_bytes
 from app.document_processing.extractor import DocumentExtractor
 from app.ai.provider_factory import AIProviderFactory
 from app.routers.analysis import execute_patient_analysis
@@ -138,6 +139,9 @@ async def upload_documents(
                 status_code=400,
                 detail=f"File '{file.filename}' exceeds {settings.MAX_UPLOAD_SIZE_MB}MB limit.",
             )
+
+        # Validate actual magic bytes matching declared extension
+        validate_file_magic_bytes(contents, file.filename)
 
         with open(storage_dest, "wb") as f_out:
             f_out.write(contents)

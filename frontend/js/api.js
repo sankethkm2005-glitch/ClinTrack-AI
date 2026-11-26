@@ -1,25 +1,43 @@
 /**
- * Shared Vanilla JS API client and Phase 1 health-check initializer.
+ * Shared Vanilla JS API client, XSS escaping utility, and health-check initializer.
  */
 
 const API_BASE = "/api";
 
+function escapeHtml(str) {
+  if (str === null || str === undefined) return "";
+  return String(str)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
+if (typeof window !== "undefined") {
+  window.escapeHtml = escapeHtml;
+}
+
 async function apiRequest(path, options = {}) {
+  const { headers: customHeaders, ...restOptions } = options;
+  const isFormData = restOptions.body instanceof FormData;
+
   const headers = {
-    "Content-Type": "application/json",
-    ...(options.headers || {}),
+    ...(isFormData ? {} : { "Content-Type": "application/json" }),
+    ...(customHeaders || {}),
   };
 
   // Attach CSRF token for mutating requests if stored
   const csrfToken = localStorage.getItem("clintrace_csrf");
-  if (csrfToken && ["POST", "PUT", "PATCH", "DELETE"].includes((options.method || "").toUpperCase())) {
+  const method = (restOptions.method || "GET").toUpperCase();
+  if (csrfToken && ["POST", "PUT", "PATCH", "DELETE"].includes(method)) {
     headers["X-CSRF-Token"] = csrfToken;
   }
 
   const response = await fetch(`${API_BASE}${path}`, {
     credentials: "include",
+    ...restOptions,
     headers,
-    ...options,
   });
 
   const contentType = response.headers.get("content-type") || "";

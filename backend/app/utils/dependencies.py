@@ -57,3 +57,14 @@ def require_role(allowed_roles: list[str]):
 
 require_patient = require_role(["patient"])
 require_doctor = require_role(["doctor"])
+
+
+def require_verified_doctor(user: User = Depends(require_doctor)) -> User:
+    """Ensure doctor account has been verified by an administrator."""
+    if not user.doctor_profile or user.doctor_profile.verification_status != "verified":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Doctor account verification required. Your account is currently pending or not verified.",
+        )
+    return user
+

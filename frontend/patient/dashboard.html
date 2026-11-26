@@ -113,7 +113,7 @@
       </div>
     </div>
 
-    <div style="display:grid; grid-template-columns:1fr 1fr; gap:1.5rem; margin-bottom:1.5rem;">
+    <div class="dashboard-two-col">
       <!-- Active Consent Grants -->
       <div class="card">
         <div class="card-header">
@@ -225,7 +225,7 @@
           if (findings.length) {
             fPreview.innerHTML = findings.slice(0, 6).map(f => {
               const cls = f.priority === 'critical' ? 'badge-error' : (f.priority === 'needs_review' ? 'badge-warning' : 'badge-neutral');
-              return `<span class="badge ${cls}">${f.title}</span>`;
+              return `<span class="badge ${cls}">${escapeHtml(f.title)}</span>`;
             }).join('');
           } else {
             fPreview.innerHTML = '<span class="text-muted" style="font-size:0.85rem;">No discrepancies or abnormal findings detected.</span>';
@@ -249,8 +249,8 @@
         container.innerHTML = pending.map(r => `
           <div class="consent-request-item" style="border:1px solid var(--border); border-radius:6px; padding:0.85rem; margin-bottom:0.75rem; display:flex; justify-content:space-between; align-items:center;">
             <div>
-              <strong>${r.doctor_name || 'Doctor'}</strong> <span class="badge badge-neutral">${r.doctor_specialization || 'Clinical'}</span>
-              <p style="margin:0.25rem 0; font-size:0.9rem;"><strong>Reason:</strong> "${r.reason}"</p>
+              <strong>${escapeHtml(r.doctor_name || 'Doctor')}</strong> <span class="badge badge-neutral">${escapeHtml(r.doctor_specialization || 'Clinical')}</span>
+              <p style="margin:0.25rem 0; font-size:0.9rem;"><strong>Reason:</strong> "${escapeHtml(r.reason)}"</p>
               <small class="text-muted">Requested on ${new Date(r.created_at).toLocaleString()}</small>
             </div>
             <div style="display:flex; gap:0.5rem; align-items:center;">
@@ -265,7 +265,7 @@
           </div>
         `).join('');
       } catch (err) {
-        container.innerHTML = `<span style="color:var(--danger-text)">Failed to load requests: ${err.message}</span>`;
+        container.innerHTML = `<span style="color:var(--danger-text)">Failed to load requests: ${escapeHtml(err.message)}</span>`;
       }
     }
 
@@ -299,7 +299,7 @@
         el.innerHTML = active.map(g => `
           <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid var(--border); padding:0.5rem 0;">
             <div>
-              <strong>${g.doctor_name}</strong>
+              <strong>${escapeHtml(g.doctor_name)}</strong>
               ${g.is_emergency ? ' <span class="badge badge-error">Emergency Override</span>' : ''}
               <br><small class="text-muted">Expires: ${new Date(g.expires_at).toLocaleString()}</small>
             </div>
@@ -332,14 +332,26 @@
         }
 
         el.innerHTML = notifs.slice(0, 5).map(n => `
-          <div style="border-bottom:1px solid var(--border); padding:0.4rem 0;">
-            <strong>${n.title}</strong>
-            <p style="margin:0.15rem 0; font-size:0.85rem;">${n.message}</p>
-            <small class="text-muted">${new Date(n.created_at).toLocaleString()}</small>
+          <div class="notification-item ${n.is_read ? 'read' : 'unread'}" style="margin-bottom:0.5rem;">
+            <div>
+              <strong>${escapeHtml(n.title)}</strong>
+              <p style="margin:0.15rem 0; font-size:0.85rem;">${escapeHtml(n.message)}</p>
+              <small class="text-muted">${new Date(n.created_at).toLocaleString()}</small>
+            </div>
+            ${!n.is_read ? `<button class="btn btn-outline btn-sm" onclick="markNotificationRead(${n.id})">Mark Read</button>` : '<span class="badge badge-neutral" style="font-size:0.72rem;">Read</span>'}
           </div>
         `).join('');
       } catch (err) {
         el.innerHTML = '<p class="text-muted">No notifications.</p>';
+      }
+    }
+
+    async function markNotificationRead(id) {
+      try {
+        await apiRequest(`/notifications/${id}/read`, { method: 'PATCH' });
+        loadNotifications();
+      } catch (err) {
+        alert('Failed to mark notification as read: ' + err.message);
       }
     }
 
@@ -354,9 +366,9 @@
 
         tbody.innerHTML = docs.slice(0, 5).map(d => `
           <tr>
-            <td><strong>${d.filename}</strong></td>
-            <td><span class="badge badge-neutral">${d.document_type.replace('_', ' ')}</span></td>
-            <td><span class="badge ${d.processing_status === 'processed' ? 'badge-success' : 'badge-warning'}">${d.processing_status}</span></td>
+            <td><strong>${escapeHtml(d.filename)}</strong></td>
+            <td><span class="badge badge-neutral">${escapeHtml(d.document_type.replace('_', ' '))}</span></td>
+            <td><span class="badge ${d.processing_status === 'processed' ? 'badge-success' : 'badge-warning'}">${escapeHtml(d.processing_status)}</span></td>
             <td>${new Date(d.uploaded_at).toLocaleDateString()}</td>
             <td>
               <a href="/api/documents/${d.id}/view" target="_blank" class="btn btn-outline btn-sm">Inspect</a>

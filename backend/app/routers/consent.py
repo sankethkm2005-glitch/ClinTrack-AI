@@ -14,7 +14,7 @@ from app.schemas.consent import (
     AccessRequestOut,
     AccessGrantOut,
 )
-from app.utils.dependencies import get_current_user, require_doctor, require_patient
+from app.utils.dependencies import get_current_user, require_doctor, require_patient, require_verified_doctor
 from app.services.audit import log_audit_event, send_notification
 
 router = APIRouter(prefix="/consent", tags=["Consent & Access Management"])
@@ -35,10 +35,10 @@ def _is_grant_active(grant: AccessGrant) -> bool:
 @router.post("/requests", response_model=AccessRequestOut, status_code=status.HTTP_201_CREATED)
 def request_patient_access(
     payload: AccessRequestCreate,
-    doctor: User = Depends(require_doctor),
+    doctor: User = Depends(require_verified_doctor),
     db: Session = Depends(get_db),
 ):
-    """Allows an authenticated doctor to submit an access request specifying a clinical reason."""
+    """Allows an authenticated verified doctor to submit an access request specifying a clinical reason."""
     patient = (
         db.query(PatientProfile)
         .filter(PatientProfile.patient_id == payload.patient_id_str.strip())
@@ -66,6 +66,22 @@ def request_patient_access(
         raise HTTPException(
             status_code=400,
             detail="You already have an active access grant for this patient's records.",
+        )
+
+    # Check for existing pending request
+    pending_request = (
+        db.query(AccessRequest)
+        .filter(
+            AccessRequest.doctor_id == doctor.id,
+            AccessRequest.patient_id == patient.id,
+            AccessRequest.status == "pending",
+        )
+        .first()
+    )
+    if pending_request:
+        raise HTTPException(
+            status_code=400,
+            detail="A pending access request already exists for this patient.",
         )
 
     # Create pending access request
@@ -313,7 +329,7 @@ def revoke_access_grant(
 @router.post("/emergency-access", response_model=AccessGrantOut)
 def initiate_emergency_access(
     payload: EmergencyAccessCreate,
-    doctor: User = Depends(require_doctor),
+    doctor: User = Depends(require_verified_doctor),
     db: Session = Depends(get_db),
 ):
     """

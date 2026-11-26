@@ -70,13 +70,24 @@
     </div>
 
     <!-- In-App Notifications & Audit Trail -->
-    <div class="card">
+    <div class="card" style="margin-bottom: 1.5rem;">
       <div class="card-header">
         <h3>Access Security &amp; Notifications</h3>
-        <p class="card-desc">Audit history of emergency events and consent requests.</p>
+        <p class="card-desc">Security notifications for consent changes and emergency overrides.</p>
       </div>
       <div id="notifications-list" style="margin-top:0.75rem;">
         <p class="text-muted">Loading notifications...</p>
+      </div>
+    </div>
+
+    <!-- Audit History Trail -->
+    <div class="card">
+      <div class="card-header">
+        <h3>Audit History &amp; Access Log</h3>
+        <p class="card-desc">Immutable log of record access events, emergency overrides, and consent changes authorized on your account.</p>
+      </div>
+      <div id="audit-history-list" style="margin-top:0.75rem;">
+        <p class="text-muted">Loading audit history...</p>
       </div>
     </div>
   </main>
@@ -93,6 +104,7 @@
         loadRequests();
         loadGrants();
         loadNotifications();
+        loadAuditHistory();
       } catch (err) {
         window.location.href = '/login.html?role=patient';
       }
@@ -111,8 +123,8 @@
         container.innerHTML = pending.map(r => `
           <div class="consent-request-item">
             <div>
-              <strong>${r.doctor_name || 'Doctor'}</strong> (${r.doctor_specialization || 'General'})
-              <p class="reason-text">Reason: "${r.reason}"</p>
+              <strong>${escapeHtml(r.doctor_name || 'Doctor')}</strong> (${escapeHtml(r.doctor_specialization || 'General')})
+              <p class="reason-text">Reason: "${escapeHtml(r.reason)}"</p>
               <small class="text-muted">Requested on ${new Date(r.created_at).toLocaleString()}</small>
             </div>
             <div style="display:flex; gap:0.5rem; align-items:center;">
@@ -127,7 +139,7 @@
           </div>
         `).join('');
       } catch (err) {
-        container.innerHTML = `<span style="color:var(--danger-text)">Failed to load requests: ${err.message}</span>`;
+        container.innerHTML = `<span style="color:var(--danger-text)">Failed to load requests: ${escapeHtml(err.message)}</span>`;
       }
     }
 
@@ -142,6 +154,7 @@
         loadRequests();
         loadGrants();
         loadNotifications();
+        loadAuditHistory();
       } catch (err) {
         alert('Action failed: ' + err.message);
       }
@@ -163,7 +176,7 @@
           }
           return `
             <tr>
-              <td><strong>${g.doctor_name}</strong></td>
+              <td><strong>${escapeHtml(g.doctor_name)}</strong></td>
               <td>${g.is_emergency ? 'Emergency Override' : 'Consented Access'}</td>
               <td>${new Date(g.created_at).toLocaleDateString()}</td>
               <td>${new Date(g.expires_at).toLocaleString()}</td>
@@ -175,7 +188,7 @@
           `;
         }).join('');
       } catch (err) {
-        tbody.innerHTML = `<tr><td colspan="6" style="color:var(--danger-text)">Error: ${err.message}</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="6" style="color:var(--danger-text)">Error: ${escapeHtml(err.message)}</td></tr>`;
       }
     }
 
@@ -185,6 +198,7 @@
         await apiRequest(`/consent/grants/${id}`, { method: 'DELETE' });
         loadGrants();
         loadNotifications();
+        loadAuditHistory();
       } catch (err) {
         alert('Revocation failed: ' + err.message);
       }
@@ -201,21 +215,70 @@
         container.innerHTML = list.map(n => `
           <div class="notification-item ${n.is_read ? 'read' : 'unread'}">
             <div>
-              <strong>${n.title}</strong>
-              <p style="margin:0.25rem 0 0; font-size:0.88rem;">${n.message}</p>
+              <strong>${escapeHtml(n.title)}</strong>
+              <p style="margin:0.25rem 0 0; font-size:0.88rem;">${escapeHtml(n.message)}</p>
               <small class="text-muted">${new Date(n.created_at).toLocaleString()}</small>
             </div>
             ${!n.is_read ? `<button class="btn btn-outline btn-sm" onclick="markRead(${n.id})">Mark Read</button>` : ''}
           </div>
         `).join('');
       } catch (err) {
-        container.innerHTML = `<span style="color:var(--danger-text)">Error: ${err.message}</span>`;
+        container.innerHTML = `<span style="color:var(--danger-text)">Error: ${escapeHtml(err.message)}</span>`;
       }
     }
 
     async function markRead(id) {
       await apiRequest(`/notifications/${id}/read`, { method: 'PATCH' });
       loadNotifications();
+    }
+
+    function formatAuditAction(action) {
+      const labels = {
+        access_requested: { text: 'Access Requested', cls: 'badge-neutral' },
+        access_granted: { text: 'Access Granted', cls: 'badge-success' },
+        access_rejected: { text: 'Access Declined', cls: 'badge-warning' },
+        access_revoked: { text: 'Access Revoked', cls: 'badge-error' },
+        emergency_access_invoked: { text: 'Emergency Override', cls: 'badge-error' },
+        workspace_viewed: { text: 'Records Viewed', cls: 'badge-neutral' },
+        finding_reviewed: { text: 'Finding Reviewed', cls: 'badge-success' }
+      };
+      return labels[action] || { text: action.replace(/_/g, ' ').toUpperCase(), cls: 'badge-neutral' };
+    }
+
+    async function loadAuditHistory() {
+      const container = document.getElementById('audit-history-list');
+      container.innerHTML = '<p class="text-muted">Loading audit history...</p>';
+      try {
+        const events = await apiRequest('/audit/history');
+        if (!events || !events.length) {
+          container.innerHTML = '<p class="text-muted">No audit history events recorded yet.</p>';
+          return;
+        }
+        container.innerHTML = events.map(ev => {
+          const meta = formatAuditAction(ev.action);
+          let detailSummary = '';
+          if (ev.details && typeof ev.details === 'object') {
+            const parts = [];
+            if (ev.details.reason) parts.push(`Reason: ${ev.details.reason}`);
+            if (ev.details.justification) parts.push(`Justification: ${ev.details.justification}`);
+            if (ev.details.duration_hours) parts.push(`Duration: ${ev.details.duration_hours}h`);
+            if (ev.details.action) parts.push(`Decision: ${ev.details.action}`);
+            detailSummary = parts.join(' • ');
+          }
+          return `
+            <div class="audit-log-item">
+              <div>
+                <span class="badge ${meta.cls}">${escapeHtml(meta.text)}</span>
+                <span class="text-muted" style="font-size:0.82rem; margin-left:0.4rem;">Resource: ${escapeHtml(ev.resource_type)} #${escapeHtml(ev.resource_id)}</span>
+                ${detailSummary ? `<p style="margin:0.35rem 0 0; font-size:0.88rem;">${escapeHtml(detailSummary)}</p>` : ''}
+              </div>
+              <small class="text-muted" style="white-space:nowrap;">${new Date(ev.created_at).toLocaleString()}</small>
+            </div>
+          `;
+        }).join('');
+      } catch (err) {
+        container.innerHTML = `<span style="color:var(--danger-text)">Failed to load audit history: ${escapeHtml(err.message)}</span>`;
+      }
     }
 
     async function handleLogout() {

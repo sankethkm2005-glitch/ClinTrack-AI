@@ -43,6 +43,17 @@ def create_user(role: str = "patient"):
     )
     c.headers["X-CSRF-Token"] = login_res.json()["csrf_token"]
     profile = c.get("/api/auth/me").json()
+
+    if role == "doctor":
+        from app.database import SessionLocal
+        from app.models.user import DoctorProfile
+        db = SessionLocal()
+        doc_prof = db.query(DoctorProfile).filter(DoctorProfile.user_id == profile["id"]).first()
+        if doc_prof:
+            doc_prof.verification_status = "verified"
+            db.commit()
+        db.close()
+
     return c, profile
 
 

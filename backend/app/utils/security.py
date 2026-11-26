@@ -2,6 +2,8 @@
 
 import secrets
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
+from fastapi import HTTPException
 from argon2 import PasswordHasher
 from argon2.exceptions import VerifyMismatchError, VerificationError
 import hmac
@@ -12,6 +14,30 @@ import base64
 from app.config import settings
 
 ph = PasswordHasher()
+
+MAGIC_SIGNATURES: dict[str, list[bytes]] = {
+    ".pdf": [b"%PDF-"],
+    ".png": [b"\x89PNG\r\n\x1a\n"],
+    ".jpg": [b"\xff\xd8\xff"],
+    ".jpeg": [b"\xff\xd8\xff"],
+}
+
+
+def validate_file_magic_bytes(contents: bytes, filename: str) -> None:
+    """Validate that raw file bytes match the expected signature for the declared extension."""
+    ext = Path(filename).suffix.lower()
+    signatures = MAGIC_SIGNATURES.get(ext)
+    if not signatures:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported file format '{ext}'. Allowed: PDF, PNG, JPG, JPEG.",
+        )
+    if not any(contents.startswith(sig) for sig in signatures):
+        raise HTTPException(
+            status_code=400,
+            detail=f"File content signature does not match declared extension '{ext}'.",
+        )
+
 
 
 def hash_password(password: str) -> str:

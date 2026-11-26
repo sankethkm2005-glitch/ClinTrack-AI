@@ -220,7 +220,7 @@ def test_doctor_can_search_patient_by_id():
     # Doctor
     d_client = TestClient(app)
     d_email = f"search_d_{uid}@hospital.org"
-    d_client.post(
+    d_reg = d_client.post(
         "/api/auth/register/doctor",
         data={
             "full_name": "Searching Doctor",
@@ -232,6 +232,18 @@ def test_doctor_can_search_patient_by_id():
             "specialization": "Radiology",
         },
     )
+    assert d_reg.status_code == 201
+
+    # Verify doctor profile for authorized search
+    from app.database import SessionLocal
+    from app.models.user import DoctorProfile
+    db = SessionLocal()
+    doc_prof = db.query(DoctorProfile).filter(DoctorProfile.user_id == d_reg.json()["id"]).first()
+    assert doc_prof is not None
+    doc_prof.verification_status = "verified"
+    db.commit()
+    db.close()
+
     d_client.post(
         "/api/auth/login",
         json={"email": d_email, "password": "DoctorPassword123!", "role": "doctor"},

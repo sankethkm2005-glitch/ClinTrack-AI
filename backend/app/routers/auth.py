@@ -1,6 +1,7 @@
 """Authentication router for registration, login, logout, and session check."""
 
 import os
+import re
 import shutil
 from pathlib import Path
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Response, UploadFile, status
@@ -22,10 +23,13 @@ from app.utils.security import (
     generate_patient_id,
     generate_csrf_token,
     create_session_token,
+    validate_file_magic_bytes,
 )
 from app.utils.dependencies import get_current_user
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
+
+EMAIL_REGEX = re.compile(r"^[\w\.\+\-]+@[\w\-]+\.[a-zA-Z0-9\-\.]+$")
 
 
 @router.get("/csrf-token")
@@ -40,20 +44,42 @@ def register_patient(payload: PatientRegisterRequest, db: Session = Depends(get_
     if payload.password != payload.confirm_password:
         raise HTTPException(status_code=400, detail="Passwords do not match.")
 
-    existing = db.query(User).filter(User.email == payload.email.lower().strip()).first()
+    if len(payload.password) < 8:
+        raise HTTPException(status_code=400, detail="Password must be at least 8 characters long.")
+
+    email_clean = payload.email.lower().strip()
+    if not EMAIL_REGEX.match(email_clean):
+        raise HTTPException(status_code=400, detail="Invalid email address format.")
+
+    existing = db.query(User).filter(User.email == email_clean).first()
     if existing:
         raise HTTPException(status_code=400, detail="An account with this email already exists.")
 
     user = User(
-        email=payload.email.lower().strip(),
+        email=email_clean,
         password_hash=hash_password(payload.password),
         role="patient",
     )
     db.add(user)
     db.flush()
 
-    patient_count = db.query(func.count(PatientProfile.id)).scalar() or 0
-    generated_id = generate_patient_id(1000 + patient_count + 1)
+    # Collision-safe patient ID generation that survives profile deletions
+    highest_num = 1000
+    all_profiles = db.query(PatientProfile.patient_id).all()
+    for (pid,) in all_profiles:
+        if pid and pid.startswith("CLN-PAT-"):
+            try:
+                num = int(pid.split("-")[-1])
+                if num > highest_num:
+                    highest_num = num
+            except ValueError:
+                pass
+
+    next_num = highest_num + 1
+    generated_id = generate_patient_id(next_num)
+    while db.query(PatientProfile).filter(PatientProfile.patient_id == generated_id).first():
+        next_num += 1
+        generated_id = generate_patient_id(next_num)
 
     profile = PatientProfile(
         user_id=user.id,
@@ -84,7 +110,13 @@ async def register_doctor(
     if password != confirm_password:
         raise HTTPException(status_code=400, detail="Passwords do not match.")
 
+    if len(password) < 8:
+        raise HTTPException(status_code=400, detail="Password must be at least 8 characters long.")
+
     email_clean = email.lower().strip()
+    if not EMAIL_REGEX.match(email_clean):
+        raise HTTPException(status_code=400, detail="Invalid email address format.")
+
     existing = db.query(User).filter(User.email == email_clean).first()
     if existing:
         raise HTTPException(status_code=400, detail="An account with this email already exists.")
@@ -98,14 +130,23 @@ async def register_doctor(
                 status_code=400,
                 detail="Supported certificate formats are PDF, PNG, JPG, and JPEG only.",
             )
-        
+
+        cert_bytes = await certificate.read()
+        max_size_bytes = settings.MAX_UPLOAD_SIZE_MB * 1024 * 1024
+        if len(cert_bytes) > max_size_bytes:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Certificate file exceeds {settings.MAX_UPLOAD_SIZE_MB}MB limit.",
+            )
+
+        validate_file_magic_bytes(cert_bytes, certificate.filename)
+
         # Save to private upload storage
         upload_dir = settings.resolved_upload_dir / "doctor_certificates"
         upload_dir.mkdir(parents=True, exist_ok=True)
         filename = f"cert_{email_clean.replace('@', '_at_')}_{os.urandom(4).hex()}{ext}"
         destination = upload_dir / filename
-        with open(destination, "wb") as buffer:
-            shutil.copyfileobj(certificate.file, buffer)
+        destination.write_bytes(cert_bytes)
         certificate_saved_path = str(destination)
 
     user = User(

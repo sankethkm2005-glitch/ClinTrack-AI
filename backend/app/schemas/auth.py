@@ -24,7 +24,7 @@ class DoctorRegisterRequest(BaseModel):
 
 
 class LoginRequest(BaseModel):
-    email: EmailStr
+    email: str = Field(..., min_length=3, max_length=255)
     password: str
     role: str = Field(..., pattern="^(patient|doctor)$")
 
@@ -55,7 +55,7 @@ class DoctorProfileOut(BaseModel):
 
 class UserOut(BaseModel):
     id: int
-    email: EmailStr
+    email: str
     role: str
     is_active: bool
     created_at: datetime

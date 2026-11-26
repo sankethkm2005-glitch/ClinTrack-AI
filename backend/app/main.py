@@ -20,8 +20,11 @@ FRONTEND_DIR = PROJECT_ROOT / "frontend"
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
-    """Ensure private storage directories exist on startup."""
+    """Ensure private storage directories exist on startup and seed demo data in dev."""
     settings.resolved_upload_dir.mkdir(parents=True, exist_ok=True)
+    if settings.APP_ENV != "production":
+        from app.utils.seed_demo import seed_demo_data
+        seed_demo_data()
     yield
 
 

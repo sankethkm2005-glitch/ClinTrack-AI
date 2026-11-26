@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models.user import User, PatientProfile
 from app.schemas.auth import PatientProfileOut
-from app.utils.dependencies import require_patient, require_doctor
+from app.utils.dependencies import require_patient, require_doctor, require_verified_doctor
 
 router = APIRouter(prefix="/patients", tags=["Patients"])
 
@@ -20,8 +20,8 @@ def get_my_patient_profile(user: User = Depends(require_patient)):
 
 
 @router.get("/search/{patient_id}")
-def search_patient_by_id(patient_id: str, db: Session = Depends(get_db), doctor: User = Depends(require_doctor)):
-    """Allows an authorized doctor to look up a patient by unique ID without disclosing clinical records."""
+def search_patient_by_id(patient_id: str, db: Session = Depends(get_db), doctor: User = Depends(require_verified_doctor)):
+    """Allows an authorized verified doctor to look up a patient by unique ID without disclosing clinical records."""
     profile = db.query(PatientProfile).filter(PatientProfile.patient_id == patient_id.strip()).first()
     if not profile:
         raise HTTPException(

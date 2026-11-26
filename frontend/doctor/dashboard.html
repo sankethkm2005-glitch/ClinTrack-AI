@@ -112,13 +112,24 @@
     </div>
 
     <!-- Outgoing Access Requests -->
-    <div class="card">
+    <div class="card" style="margin-bottom: 1.5rem;">
       <div class="card-header">
         <h3><i data-lucide="clock" aria-hidden="true"></i> Outgoing Access Requests</h3>
         <p class="card-desc">Status of requests you have submitted to patients.</p>
       </div>
       <div id="outgoing-requests-list">
         <p class="text-muted">Loading outgoing requests...</p>
+      </div>
+    </div>
+
+    <!-- Doctor Notifications -->
+    <div class="card">
+      <div class="card-header">
+        <h3><i data-lucide="bell" aria-hidden="true"></i> Notifications &amp; Consent Updates</h3>
+        <p class="card-desc">Patient approvals, rejections, revocations, and clinical workspace alerts.</p>
+      </div>
+      <div id="doctor-notifications-list" style="margin-top:0.5rem;">
+        <p class="text-muted">Loading notifications...</p>
       </div>
     </div>
   </main>
@@ -143,6 +154,7 @@
         }
         loadMyPatients();
         loadOutgoingRequests();
+        loadDoctorNotifications();
       } catch (err) {
         window.location.href = '/login.html?role=doctor';
       }
@@ -159,10 +171,10 @@
       try {
         const data = await apiRequest(`/patients/search/${encodeURIComponent(id)}`);
         currentTargetPatientIdStr = data.patient_id;
-        resDiv.innerHTML = `<span style="color:var(--success-text);">✔ Found: <strong>${data.full_name}</strong> (${data.patient_id})</span><br><small class="text-muted">${data.notice}</small>`;
+        resDiv.innerHTML = `<span style="color:var(--success-text);">✔ Found: <strong>${escapeHtml(data.full_name)}</strong> (${escapeHtml(data.patient_id)})</span><br><small class="text-muted">${escapeHtml(data.notice)}</small>`;
         drawer.style.display = 'block';
       } catch (err) {
-        resDiv.innerHTML = `<span style="color:var(--danger-text);">✖ ${err.message}</span>`;
+        resDiv.innerHTML = `<span style="color:var(--danger-text);">✖ ${escapeHtml(err.message)}</span>`;
       }
     }
 
@@ -224,8 +236,8 @@
 
         tbody.innerHTML = grants.map(g => `
           <tr>
-            <td><strong>${g.patient_id_str || 'PAT-' + g.patient_id}</strong></td>
-            <td>${g.patient_name || 'Patient'}</td>
+            <td><strong>${escapeHtml(g.patient_id_str || 'PAT-' + g.patient_id)}</strong></td>
+            <td>${escapeHtml(g.patient_name || 'Patient')}</td>
             <td>${g.is_emergency ? '<span class="badge badge-error">Emergency Override</span>' : '<span class="badge badge-success">Consented</span>'}</td>
             <td>${new Date(g.expires_at).toLocaleString()}</td>
             <td>
@@ -241,7 +253,7 @@
           </tr>
         `).join('');
       } catch (err) {
-        tbody.innerHTML = `<tr><td colspan="5" style="color:var(--danger-text)">Error loading patients: ${err.message}</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="5" style="color:var(--danger-text)">Error loading patients: ${escapeHtml(err.message)}</td></tr>`;
       }
     }
 
@@ -265,8 +277,8 @@
           return `
             <div class="consent-request-item" style="border-bottom:1px solid var(--border); padding:0.6rem 0; display:flex; justify-content:space-between; align-items:center;">
               <div>
-                <strong>${r.patient_name || r.patient_id_str}</strong> (${r.patient_id_str})
-                <p class="reason-text" style="margin:0.2rem 0; font-size:0.9rem;">Reason: "${r.reason}"</p>
+                <strong>${escapeHtml(r.patient_name || r.patient_id_str)}</strong> (${escapeHtml(r.patient_id_str)})
+                <p class="reason-text" style="margin:0.2rem 0; font-size:0.9rem;">Reason: "${escapeHtml(r.reason)}"</p>
                 <small class="text-muted">Requested on ${new Date(r.created_at).toLocaleString()}</small>
               </div>
               <div>${badge}</div>
@@ -274,7 +286,39 @@
           `;
         }).join('');
       } catch (err) {
-        container.innerHTML = `<span style="color:var(--danger-text)">Error: ${err.message}</span>`;
+        container.innerHTML = `<span style="color:var(--danger-text)">Error: ${escapeHtml(err.message)}</span>`;
+      }
+    }
+
+    async function loadDoctorNotifications() {
+      const container = document.getElementById('doctor-notifications-list');
+      try {
+        const list = await apiRequest('/notifications');
+        if (!list.length) {
+          container.innerHTML = '<p class="text-muted">No notifications recorded.</p>';
+          return;
+        }
+        container.innerHTML = list.slice(0, 10).map(n => `
+          <div class="notification-item ${n.is_read ? 'read' : 'unread'}">
+            <div>
+              <strong>${escapeHtml(n.title)}</strong>
+              <p style="margin:0.2rem 0 0; font-size:0.88rem;">${escapeHtml(n.message)}</p>
+              <small class="text-muted">${new Date(n.created_at).toLocaleString()}</small>
+            </div>
+            ${!n.is_read ? `<button class="btn btn-outline btn-sm" onclick="markDoctorNotificationRead(${n.id})">Mark Read</button>` : '<span class="badge badge-neutral" style="font-size:0.72rem;">Read</span>'}
+          </div>
+        `).join('');
+      } catch (err) {
+        container.innerHTML = `<span style="color:var(--danger-text)">Failed to load notifications: ${escapeHtml(err.message)}</span>`;
+      }
+    }
+
+    async function markDoctorNotificationRead(id) {
+      try {
+        await apiRequest(`/notifications/${id}/read`, { method: 'PATCH' });
+        loadDoctorNotifications();
+      } catch (err) {
+        alert('Failed to mark notification as read: ' + err.message);
       }
     }
 
